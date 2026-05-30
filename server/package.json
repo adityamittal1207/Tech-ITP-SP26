@@ -4,13 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch index.js",
-    "start": "node index.js"
+    "dev": "node --watch --import dotenv/config index.js",
+    "start": "node --import dotenv/config index.js",
+    "seed": "node --import dotenv/config seed.js",
+    "test": "node --test tests/retentionService.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
-    "mongoose": "^8.15.1"
+    "mongoose": "^8.15.1",
+    "node-cron": "^4.2.1",
+    "twilio": "^6.0.2"
   }
 }
