@@ -1,5 +1,6 @@
 import Member from "../models/Member.js";
 import { sendTemplate } from "../services/messageService.js";
+import { normalizePhone } from "../services/phone.js";
 
 export async function getMembers(_req, res, next) {
   try {
@@ -22,6 +23,13 @@ export async function getMember(req, res, next) {
 
 export async function createMember(req, res, next) {
   try {
+    if (req.body.phone) {
+      try {
+        req.body.phone = normalizePhone(req.body.phone);
+      } catch (err) {
+        return next(Object.assign(err, { status: 400 }));
+      }
+    }
     const member = await Member.create(req.body);
     if (member.phone) {
       try {
@@ -38,6 +46,13 @@ export async function createMember(req, res, next) {
 
 export async function updateMember(req, res, next) {
   try {
+    if (req.body.phone) {
+      try {
+        req.body.phone = normalizePhone(req.body.phone);
+      } catch (err) {
+        return next(Object.assign(err, { status: 400 }));
+      }
+    }
     const member = await Member.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
