@@ -1,4 +1,5 @@
 import Booking from "../models/Booking.js";
+import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import { computeStatus } from "../services/retentionService.js";
 
@@ -28,18 +29,24 @@ export async function getBooking(req, res, next) {
 
 export async function createBooking(req, res, next) {
   try {
+    const { memberId, classId } = req.body;
+
+    const [member, cls] = await Promise.all([
+      Member.findById(memberId),
+      Class.findById(classId),
+    ]);
+    if (!member) return res.status(404).json({ message: "Member not found" });
+    if (!cls) return res.status(404).json({ message: "Class not found" });
+
     const booking = await Booking.create(req.body);
     try {
-      const member = await Member.findById(booking.memberId);
-      if (member) {
-        const memberBookings = await Booking.find(
-          { memberId: booking.memberId },
-          { memberId: 1, bookedAt: 1 }
-        );
-        await Member.findByIdAndUpdate(member._id, {
-          $set: { status: computeStatus(member, memberBookings) },
-        });
-      }
+      const memberBookings = await Booking.find(
+        { memberId: booking.memberId },
+        { memberId: 1, bookedAt: 1 }
+      );
+      await Member.findByIdAndUpdate(member._id, {
+        $set: { status: computeStatus(member, memberBookings) },
+      });
     } catch (syncErr) {
       console.error("post-booking status sync failed (cron will reconcile):", syncErr);
     }
