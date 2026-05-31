@@ -5,6 +5,7 @@ import Booking from "./models/Booking.js";
 import Class from "./models/Class.js";
 import Member from "./models/Member.js";
 import { runRetentionScoring } from "./services/scoringJob.js";
+import config from "./config/businessConfig.js";
 
 dotenv.config();
 
@@ -71,9 +72,10 @@ async function seed() {
   console.log(`Inserted ${classes.length} classes`);
 
   // Insert members (strip bookingOffsets before saving)
-  const memberDocs = memberBookingData.map(({ bookingOffsets: _offsets, joinDaysAgo, ...fields }) => ({
+  const memberDocs = memberBookingData.map(({ bookingOffsets, joinDaysAgo, ...fields }) => ({
     ...fields,
     joinDate: daysAgo(joinDaysAgo),
+    milestoneSent: bookingOffsets.length >= config.milestoneVisits,
   }));
   const members = await Member.insertMany(memberDocs);
   console.log(`Inserted ${members.length} members`);

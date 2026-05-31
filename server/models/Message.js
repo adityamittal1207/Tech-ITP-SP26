@@ -9,7 +9,7 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["reminder", "atRisk", "winback", "welcome"],
+      enum: ["reminder", "atRisk", "winback", "welcome", "milestone"],
       required: [true, "Type is required"],
     },
     templateUsed: {

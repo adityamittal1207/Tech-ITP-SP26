@@ -44,6 +44,10 @@ const memberSchema = new mongoose.Schema(
       enum: ["new", "regular", "at-risk", "lapsed"],
       default: "new",
     },
+    milestoneSent: {
+      type: Boolean,
+      default: false,
+    },
     notes: {
       type: String,
       trim: true,
