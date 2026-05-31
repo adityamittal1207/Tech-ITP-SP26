@@ -1,7 +1,8 @@
 import { Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { Home, Users, BarChart3, MessageSquare, Settings, Waves, Menu, X, Bell, Search } from "lucide-react";
 import { useState } from "react";
-import { STUDIO } from "@/lib/mock-data";
+import { Toaster } from "@/components/ui/sonner";
+import { useStudio } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
 
 const nav = [
@@ -15,6 +16,13 @@ const nav = [
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: studio } = useStudio();
+
+  const STUDIO = studio ?? {
+    name: "Tether",
+    city: "Encinitas, CA",
+    owner: "Maya Calderón",
+  };
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
@@ -25,7 +33,6 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen w-full bg-background text-foreground">
-      {/* Sidebar */}
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-40 w-64 border-r border-sidebar-border bg-sidebar transition-transform lg:translate-x-0",
@@ -37,7 +44,7 @@ export function AppShell() {
             <Waves className="h-5 w-5" />
           </div>
           <div className="leading-tight">
-            <div className="font-display font-semibold text-sidebar-foreground">Studio Pulse</div>
+            <div className="font-display font-semibold text-sidebar-foreground">Tether</div>
             <div className="text-[11px] text-muted-foreground">Boutique fitness OS</div>
           </div>
         </div>
@@ -77,7 +84,6 @@ export function AppShell() {
         />
       )}
 
-      {/* Main */}
       <div className="lg:pl-64">
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background/80 backdrop-blur px-4 lg:px-8">
           <button
@@ -106,6 +112,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <Toaster richColors position="top-right" />
     </div>
   );
 }

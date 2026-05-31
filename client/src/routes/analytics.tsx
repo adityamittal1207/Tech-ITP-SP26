@@ -1,10 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
-import {
-  DAYS, SLOTS, SCHEDULE_HEATMAP, CLASS_TYPES, CLASS_TREND, INSTRUCTORS,
-  REVENUE_MIX, REVPASH_TREND, CHANNEL_LTV,
-} from "@/lib/mock-data";
+import { PageError, PageLoader } from "@/components/PageState";
+import { useAnalyticsPage } from "@/hooks/use-studio-data";
 import {
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid,
   PieChart, Pie, Cell, BarChart, Bar, Legend,
@@ -12,14 +10,42 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/analytics")({
-  head: () => ({ meta: [{ title: "Class & Revenue Analytics — Studio Pulse" }] }),
+  head: () => ({ meta: [{ title: "Class & Revenue Analytics — Tether" }] }),
   component: AnalyticsPage,
 });
 
 const PALETTE = ["var(--color-chart-1)", "var(--color-chart-2)", "var(--color-chart-3)", "var(--color-chart-4)", "var(--color-chart-5)"];
 
 function AnalyticsPage() {
-  const [selectedClass, setSelectedClass] = useState(CLASS_TYPES[0].name);
+  const { data, isLoading, isError, error } = useAnalyticsPage();
+  const [selectedClass, setSelectedClass] = useState("");
+
+  if (isLoading) return <PageLoader />;
+  if (isError || !data) return <PageError message={error?.message ?? "Failed to load analytics"} />;
+
+  const {
+    days: DAYS,
+    slots: SLOTS,
+    scheduleHeatmap: SCHEDULE_HEATMAP,
+    classTypes: CLASS_TYPES,
+    classTrend: CLASS_TREND,
+    instructors: INSTRUCTORS,
+    revenueMix: REVENUE_MIX,
+    revpashTrend: REVPASH_TREND,
+    channelLtv: CHANNEL_LTV,
+  } = data as {
+    days: string[];
+    slots: string[];
+    scheduleHeatmap: { day: string; cells: { slot: string; fill: number }[] }[];
+    classTypes: { name: string; color: string }[];
+    classTrend: { wk: string; attended: number; capacity: number; noShow: number }[];
+    instructors: { id: string; name: string; specialty: string; fillRate: number; retention: number; classes30d: number }[];
+    revenueMix: { name: string; value: number }[];
+    revpashTrend: { wk: string; revpash: number }[];
+    channelLtv: { channel: string; cac: number; ltv: number; count: number }[];
+  };
+
+  const activeSelected = selectedClass || CLASS_TYPES[0]?.name || "";
   const totalRev = REVENUE_MIX.reduce((s, r) => s + r.value, 0);
 
   return (
@@ -71,7 +97,7 @@ function AnalyticsPage() {
         <div className="flex items-end justify-between flex-wrap gap-3 mb-3">
           <SectionTitle title="Per-class trend" subtitle="12-week attendance · no-show rate · top regulars" />
           <select
-            value={selectedClass}
+            value={activeSelected}
             onChange={(e) => setSelectedClass(e.target.value)}
             className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm"
           >
@@ -93,7 +119,7 @@ function AnalyticsPage() {
             </ResponsiveContainer>
           </div>
           <div>
-            <div className="text-xs font-medium text-muted-foreground mb-2">Top regulars · {selectedClass}</div>
+            <div className="text-xs font-medium text-muted-foreground mb-2">Top regulars · {activeSelected}</div>
             <div className="space-y-2">
               {["Ella Park", "Ruby Mendes", "Liam Holloway", "Iris Quintero", "Theo Marsh"].map((n, i) => (
                 <div key={n} className="flex items-center justify-between rounded-lg border border-border p-2.5">

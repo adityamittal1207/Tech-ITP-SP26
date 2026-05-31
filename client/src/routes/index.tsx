@@ -8,15 +8,14 @@ import {
   UserPlus, X as XIcon, MessageCircle, CheckCircle2,
 } from "lucide-react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
-import {
-  KPIS, TODAY_CLASSES, ACTION_ITEMS, ACTIVITY_FEED, VISITS_TREND,
-} from "@/lib/mock-data";
+import { PageError, PageLoader } from "@/components/PageState";
+import { useHomePage } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Studio Pulse — Daily View" },
+      { title: "Tether — Daily View" },
       { name: "description", content: "Morning command center for boutique fitness studios." },
     ],
   }),
@@ -44,11 +43,17 @@ function fmt(value: number, unit: string) {
 }
 
 function Home() {
+  const { data, isLoading, isError, error } = useHomePage();
+  if (isLoading) return <PageLoader />;
+  if (isError || !data) return <PageError message={error?.message ?? "Failed to load dashboard"} />;
+
+  const { studio, kpis: KPIS, todayClasses: TODAY_CLASSES, actionItems: ACTION_ITEMS, activityFeed: ACTIVITY_FEED, visitsTrend: VISITS_TREND } = data;
+
   return (
     <div className="space-y-8">
       <PageHeader
-        title="Good morning, Maya ☕"
-        subtitle="Here's what's happening at Tidewater today."
+        title={`Good morning, ${studio.owner.split(" ")[0]} ☕`}
+        subtitle={`Here's what's happening at ${studio.name} today.`}
       />
 
       {/* KPI strip */}

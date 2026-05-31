@@ -43,6 +43,15 @@ const memberSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    joinSource: {
+      type: String,
+      enum: ["Instagram", "Groupon", "Referral", "Walk-in"],
+      default: "Walk-in",
+    },
+    tags: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );

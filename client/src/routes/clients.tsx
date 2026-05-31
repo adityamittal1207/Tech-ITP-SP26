@@ -1,14 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
+import { PageError, PageLoader } from "@/components/PageState";
 import {
-  CLIENTS, STATUSES, statusColor, COUNTS, COHORTS, type Client, type ClientStatus,
+  STATUSES, statusColor, type Client, type ClientStatus,
 } from "@/lib/mock-data";
+import { useSendOutreach } from "@/hooks/use-studio-mutations";
+import { useClientsPage } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
 import { Search, Send, X } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/clients")({
-  head: () => ({ meta: [{ title: "Clients & Retention — Studio Pulse" }] }),
+  head: () => ({ meta: [{ title: "Clients & Retention — Tether" }] }),
   component: ClientsPage,
 });
 
@@ -24,15 +28,19 @@ function StatusChip({ s }: { s: ClientStatus }) {
 }
 
 function ClientsPage() {
+  const { data, isLoading, isError, error } = useClientsPage();
+  const sendOutreach = useSendOutreach();
   const [statusFilter, setStatusFilter] = useState<ClientStatus | "All">("All");
   const [channelFilter, setChannelFilter] = useState("All");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Client | null>(null);
   const [cohortChannel, setCohortChannel] = useState("All");
 
+  const CLIENTS = data?.clients ?? [];
+
   const atRisk = useMemo(
     () => CLIENTS.filter((c) => c.status === "At-Risk").sort((a, b) => b.ltv - a.ltv).slice(0, 10),
-    []
+    [CLIENTS]
   );
 
   const filtered = useMemo(() => {
@@ -42,7 +50,24 @@ function ClientsPage() {
       if (q && !c.name.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     }).slice(0, 60);
-  }, [statusFilter, channelFilter, q]);
+  }, [CLIENTS, statusFilter, channelFilter, q]);
+
+  if (isLoading) return <PageLoader />;
+  if (isError || !data) return <PageError message={error?.message ?? "Failed to load clients"} />;
+
+  const COUNTS = data.counts as Record<ClientStatus, number>;
+  const COHORTS = data.cohorts;
+
+  const handleSend = (client: Client) => {
+    const type = client.status === "Lapsed" || client.status === "Win-back" ? "winback" : "atRisk";
+    sendOutreach.mutate(
+      { memberId: client.id, type },
+      {
+        onSuccess: () => toast.success(`Outreach sent to ${client.name}`),
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
 
   return (
     <div className="space-y-8">
@@ -102,7 +127,11 @@ function ClientsPage() {
                     <span className="text-xs rounded-md bg-muted px-2 py-1">At-risk check-in</span>
                   </td>
                   <td className="py-3 text-right">
-                    <button className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:bg-primary/90">
+                    <button
+                      onClick={() => handleSend(c)}
+                      disabled={sendOutreach.isPending}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+                    >
                       <Send className="h-3.5 w-3.5" /> Send
                     </button>
                   </td>
@@ -218,12 +247,29 @@ function ClientsPage() {
       </div>
 
       {/* Drawer */}
-      {selected && <ClientDrawer client={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <ClientDrawer
+          client={selected}
+          onClose={() => setSelected(null)}
+          onSend={() => handleSend(selected)}
+          sending={sendOutreach.isPending}
+        />
+      )}
     </div>
   );
 }
 
-function ClientDrawer({ client, onClose }: { client: Client; onClose: () => void }) {
+function ClientDrawer({
+  client,
+  onClose,
+  onSend,
+  sending,
+}: {
+  client: Client;
+  onClose: () => void;
+  onSend: () => void;
+  sending: boolean;
+}) {
   // Build a fake 12-month attendance series for this client
   const series = Array.from({ length: 12 }, (_, i) => ({
     m: `M${i + 1}`,
@@ -287,7 +333,11 @@ function ClientDrawer({ client, onClose }: { client: Client; onClose: () => void
             </div>
           </div>
 
-          <button className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:bg-primary/90">
+          <button
+            onClick={onSend}
+            disabled={sending}
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+          >
             <Send className="h-4 w-4" /> Send outreach
           </button>
         </div>
