@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import config from "../config/businessConfig.js";
 
 const memberSchema = new mongoose.Schema(
   {
@@ -26,8 +27,13 @@ const memberSchema = new mongoose.Schema(
     },
     membershipType: {
       type: String,
-      enum: ["basic", "premium", "unlimited"],
+      enum: config.membershipTiers,
       required: [true, "Membership type is required"],
+    },
+    source: {
+      type: String,
+      enum: config.sourceChannels,
+      required: [true, "Source is required"],
     },
     isActive: {
       type: Boolean,
