@@ -6,7 +6,6 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import classRoutes from "./routes/classRoutes.js";
-import itemRoutes from "./routes/itemRoutes.js";
 import memberRoutes from "./routes/memberRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import smsRoutes from "./routes/smsRoutes.js";
@@ -24,7 +23,6 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.use("/api/items", itemRoutes);
 app.use("/api/members", memberRoutes);
 app.use("/api/classes", classRoutes);
 app.use("/api/bookings", bookingRoutes);
