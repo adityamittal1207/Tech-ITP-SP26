@@ -2,6 +2,7 @@ import Booking from "../models/Booking.js";
 import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import config from "../config/businessConfig.js";
+import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
 
 function groupByMember(bookings) {
   const map = {};
@@ -12,12 +13,13 @@ function groupByMember(bookings) {
   return map;
 }
 
-export async function getDashboardStats(_req, res, next) {
+export async function getDashboardStats(req, res, next) {
   try {
+    const filter = ownerFilter(getOwnerUid(req));
     const [members, bookings, classes] = await Promise.all([
-      Member.find(),
-      Booking.find({}, { memberId: 1, classId: 1, bookedAt: 1, attended: 1 }),
-      Class.find({}, { _id: 1, category: 1 }),
+      Member.find(filter),
+      Booking.find(filter, { memberId: 1, classId: 1, bookedAt: 1, attended: 1 }),
+      Class.find(filter, { _id: 1, category: 1 }),
     ]);
 
     const totalMembers  = members.length;
@@ -73,9 +75,9 @@ export async function getDashboardStats(_req, res, next) {
   }
 }
 
-export async function getRetentionStats(_req, res, next) {
+export async function getRetentionStats(req, res, next) {
   try {
-    const members = await Member.find();
+    const members = await Member.find(ownerFilter(getOwnerUid(req)));
     const statusCounts = { new: 0, regular: 0, "at-risk": 0, lapsed: 0 };
     const cohortMap = {};
 
@@ -104,11 +106,12 @@ export async function getRetentionStats(_req, res, next) {
   }
 }
 
-export async function getClassStats(_req, res, next) {
+export async function getClassStats(req, res, next) {
   try {
+    const filter = ownerFilter(getOwnerUid(req));
     const [classes, bookings] = await Promise.all([
-      Class.find(),
-      Booking.find({}, { classId: 1, attended: 1 }),
+      Class.find(filter),
+      Booking.find(filter, { classId: 1, attended: 1 }),
     ]);
 
     const bookingsByClass = {};
@@ -162,9 +165,9 @@ export async function getClassStats(_req, res, next) {
   }
 }
 
-export async function getAcquisitionStats(_req, res, next) {
+export async function getAcquisitionStats(req, res, next) {
   try {
-    const members = await Member.find();
+    const members = await Member.find(ownerFilter(getOwnerUid(req)));
 
     // Pre-seed every channel at zero so all six always appear in the response
     const sourceMap = {};

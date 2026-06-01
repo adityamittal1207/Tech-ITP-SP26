@@ -3,6 +3,11 @@ import config from "../config/businessConfig.js";
 
 const memberSchema = new mongoose.Schema(
   {
+    ownerUid: {
+      type: String,
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: [true, "Name is required"],
@@ -11,7 +16,6 @@ const memberSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Email is required"],
-      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -62,8 +66,19 @@ const memberSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    externalSource: {
+      type: String,
+      enum: ["mindbody", "native"],
+    },
+    externalId: {
+      type: String,
+      trim: true,
+    },
   },
   { timestamps: true }
 );
+
+memberSchema.index({ ownerUid: 1, email: 1 }, { unique: true });
+memberSchema.index({ externalSource: 1, externalId: 1 }, { sparse: true });
 
 export default mongoose.model("Member", memberSchema);

@@ -1,7 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Link, createRootRouteWithContext, useRouter } from "@tanstack/react-router";
+import {
+  Link,
+  Navigate,
+  Outlet,
+  createRootRouteWithContext,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 
 import { AppShell } from "@/components/layout/AppShell";
+import { PageLoader } from "@/components/PageState";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 
 function NotFoundComponent() {
   return (
@@ -71,7 +80,33 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell />
+      <AuthProvider>
+        <AuthenticatedLayout />
+      </AuthProvider>
     </QueryClientProvider>
   );
+}
+
+function AuthenticatedLayout() {
+  const { user, loading, isConfigured } = useAuth();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isLoginRoute = pathname === "/login";
+
+  if (loading) {
+    return <PageLoader label="Checking session…" />;
+  }
+
+  if (isConfigured && !user && !isLoginRoute) {
+    return <Navigate to="/login" />;
+  }
+
+  if (user && isLoginRoute) {
+    return <Navigate to="/" />;
+  }
+
+  if (isLoginRoute) {
+    return <Outlet />;
+  }
+
+  return <AppShell />;
 }

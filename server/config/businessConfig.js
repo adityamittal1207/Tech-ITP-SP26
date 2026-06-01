@@ -4,7 +4,7 @@ export default {
   primaryColor: "#C8F135",
   classCategories: ["yoga", "pilates", "hiit", "spin", "strength"],
   membershipTiers: ["basic", "premium", "unlimited"],
-  sourceChannels: ["instagram", "referral", "walk-in", "google", "event", "website"],
+  sourceChannels: ["instagram", "referral", "walk-in", "groupon", "google", "event", "website", "mindbody", "acuity", "native"],
   milestoneVisits: 4,
   retention: {
     // Boundaries are upper-inclusive: regular ≤14d, at-risk >14 & ≤21d, lapsed >21d. new = joined ≤30d (overrides).

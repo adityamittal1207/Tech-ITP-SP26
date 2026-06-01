@@ -2,10 +2,11 @@ import Booking from "../models/Booking.js";
 import Member from "../models/Member.js";
 import { computeStatus } from "./retentionService.js";
 
-export async function runRetentionScoring() {
+export async function runRetentionScoring(ownerUid) {
+  const filter = ownerUid ? { ownerUid } : {};
   const [members, bookings] = await Promise.all([
-    Member.find(),
-    Booking.find({}, { memberId: 1, bookedAt: 1 }),
+    Member.find(filter),
+    Booking.find(filter, { memberId: 1, bookedAt: 1 }),
   ]);
 
   const byMember = {};

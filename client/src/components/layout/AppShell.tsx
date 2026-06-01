@@ -1,7 +1,20 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { Home, Users, BarChart3, MessageSquare, Settings, Waves, Menu, X, Bell, Search } from "lucide-react";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import {
+  Home,
+  Users,
+  BarChart3,
+  MessageSquare,
+  Settings,
+  Waves,
+  Menu,
+  X,
+  Bell,
+  Search,
+  LogOut,
+} from "lucide-react";
 import { useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { useAuth } from "@/contexts/AuthContext";
 import { useStudio } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +28,8 @@ const nav = [
 
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const navigate = useNavigate();
+  const { signOut, user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { data: studio } = useStudio();
 
@@ -70,10 +85,28 @@ export function AppShell() {
             );
           })}
         </nav>
-        <div className="absolute bottom-4 left-3 right-3 rounded-xl border border-sidebar-border bg-card p-3">
-          <div className="text-xs text-muted-foreground">Owner</div>
-          <div className="text-sm font-medium">{STUDIO.owner}</div>
-          <div className="text-xs text-muted-foreground mt-0.5">{STUDIO.city}</div>
+        <div className="absolute bottom-4 left-3 right-3 space-y-2">
+          <div className="rounded-xl border border-sidebar-border bg-card p-3">
+            <div className="text-xs text-muted-foreground">Owner</div>
+            <div className="text-sm font-medium">{STUDIO.owner}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{STUDIO.city}</div>
+            {user?.email && (
+              <div className="text-xs text-muted-foreground mt-2 truncate" title={user.email}>
+                {user.email}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await signOut();
+              navigate({ to: "/login" });
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-lg border border-sidebar-border bg-card px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <LogOut className="h-4 w-4" />
+            Sign out
+          </button>
         </div>
       </aside>
 

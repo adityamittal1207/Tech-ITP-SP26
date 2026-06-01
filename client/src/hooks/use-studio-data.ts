@@ -54,8 +54,28 @@ export function useSettingsPage() {
   return useQuery({
     queryKey: ["studio", "settings"],
     queryFn: () =>
-      apiRequest<{ studio: Studio; integrations: { id: string; name: string; desc: string; connected: boolean; lastSync: string | null }[] }>(
-        "/studio/settings"
-      ),
+      apiRequest<{
+        studio: Studio;
+        retention: { newMemberDays: number; daysUntilAtRisk: number; daysUntilLapsed: number };
+        integrations: {
+          id: string;
+          name: string;
+          desc: string;
+          connected: boolean;
+          lastSync: string | null;
+          importSource?: string;
+        }[];
+        exportGuides: Record<string, { name: string; steps: string[] }>;
+        lastImport: {
+          ranAt: string;
+          summary: {
+            kind: string;
+            source?: string;
+            imported: number;
+            updated: number;
+            errors: string[];
+          };
+        } | null;
+      }>("/studio/settings"),
   });
 }

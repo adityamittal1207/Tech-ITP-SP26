@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 const messageSchema = new mongoose.Schema(
   {
+    ownerUid: {
+      type: String,
+      required: true,
+      index: true,
+    },
     memberId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Member",

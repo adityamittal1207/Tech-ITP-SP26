@@ -1,11 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { ExplainTerm } from "@/components/ExplainTerm";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
-import { useSendOutreach } from "@/hooks/use-studio-mutations";
+import { useSendOutreach, useUpdateSettings } from "@/hooks/use-studio-mutations";
 import { useCommunicationsPage } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
-import { Send, MessageSquare, Bell, RotateCcw, Check } from "lucide-react";
+import { Send, MessageSquare, Bell, RotateCcw, Check, Pencil, Save, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/communications")({
@@ -13,12 +14,32 @@ export const Route = createFileRoute("/communications")({
   component: CommsPage,
 });
 
+type TemplateItem = {
+  id: string;
+  key: string;
+  name: string;
+  category: string;
+  body: string;
+};
+
+type MessageLogItem = {
+  id: string;
+  client: string;
+  template: string;
+  type: string;
+  sent: string;
+  status: string;
+  body: string;
+};
+
 type QueueItem = {
   id: string;
   memberId: string;
   client: import("@/lib/mock-data").Client;
-  template: { id: string; name: string; body: string };
+  template: { id: string; key: string; name: string; body: string };
 };
+
+const MERGE_TAGS = ["{firstName}", "{className}", "{classTime}", "{visitCount}"];
 
 function CommsPage() {
   const [tab, setTab] = useState<"reminders" | "outreach">("reminders");
@@ -33,12 +54,21 @@ function CommsPage() {
     templates: TEMPLATES,
     sendQueue: SEND_QUEUE,
     messageLog: MESSAGE_LOG,
+    smsSummary: SMS_SUMMARY,
   } = data as {
     reminderRules: { id: string; name: string; trigger: string; enabled: boolean; replies: string }[];
     reminderExamples: { id: string; body: string }[];
-    templates: { id: string; name: string; category: string; replyRate: number; bookingRate: number; revenue: number; body: string }[];
+    templates: TemplateItem[];
     sendQueue: QueueItem[];
-    messageLog: { id: string; client: string; template: string; sent: string; reply: string; booked: string; revenue: number }[];
+    messageLog: MessageLogItem[];
+    smsSummary: {
+      periodDays: number;
+      conversionWindowDays: number;
+      sent: number;
+      converted: number;
+      visitsRecovered: number;
+      conversionRate: number;
+    };
   };
 
   return (
@@ -67,53 +97,41 @@ function CommsPage() {
         })}
       </div>
 
+      {SMS_SUMMARY.sent > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-soft">
+          <p className="text-sm text-muted-foreground">
+            Last {SMS_SUMMARY.periodDays} days:{" "}
+            <ExplainTerm text="Counted from your message log when Tether sends an SMS (failed sends excluded).">
+              <span className="font-medium text-foreground">{SMS_SUMMARY.sent} messages sent</span>
+            </ExplainTerm>
+            {" → "}
+            <ExplainTerm text="Outreach messages where the same client attended a class within 7 days after send — matched by timing against booking records, not link clicks.">
+              <span className="font-medium text-foreground">{SMS_SUMMARY.converted} rebooked ({SMS_SUMMARY.conversionRate}%)</span>
+            </ExplainTerm>
+            {" · "}
+            <ExplainTerm text="Total attended visits in that 7-day window after outreach messages.">
+              <span className="font-medium text-foreground">{SMS_SUMMARY.visitsRecovered} visits recovered</span>
+            </ExplainTerm>
+          </p>
+          <Link
+            to="/analytics"
+            hash="sms-conversion"
+            className="text-sm font-medium text-primary hover:underline shrink-0"
+          >
+            View full breakdown →
+          </Link>
+        </div>
+      )}
+
       {tab === "reminders" ? (
         <Reminders rules={REMINDER_RULES} examples={REMINDER_EXAMPLES} />
       ) : (
         <Outreach sendQueue={SEND_QUEUE} templates={TEMPLATES} />
       )}
 
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <SectionTitle title="Unified message log" subtitle="Every send logged from the platform" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-muted-foreground border-b border-border">
-                <th className="text-left font-medium py-2">Client</th>
-                <th className="text-left font-medium py-2">Template</th>
-                <th className="text-left font-medium py-2">Sent</th>
-                <th className="text-left font-medium py-2">Status</th>
-                <th className="text-left font-medium py-2">Booking that followed</th>
-                <th className="text-right font-medium py-2">Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              {MESSAGE_LOG.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-6 text-center text-muted-foreground">
-                    No messages sent yet. Use the outreach queue to send your first SMS.
-                  </td>
-                </tr>
-              ) : (
-                MESSAGE_LOG.map((m) => (
-                  <tr key={m.id} className="border-b border-border/60 last:border-0">
-                    <td className="py-3 font-medium">{m.client}</td>
-                    <td className="py-3 text-muted-foreground">{m.template}</td>
-                    <td className="py-3 text-muted-foreground">{m.sent}</td>
-                    <td className="py-3">
-                      <span className="inline-flex items-center gap-1 rounded-md bg-success/15 text-success px-2 py-0.5 text-xs font-medium">
-                        <Check className="h-3 w-3" /> {m.reply}
-                      </span>
-                    </td>
-                    <td className="py-3 text-muted-foreground">{m.booked}</td>
-                    <td className="py-3 text-right font-medium">{m.revenue ? `$${m.revenue}` : "—"}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <TemplateLibrary templates={TEMPLATES} />
+
+      <MessageLog entries={MESSAGE_LOG} />
     </div>
   );
 }
@@ -164,16 +182,33 @@ function Reminders({
   );
 }
 
+function fillTemplate(body: string, client: QueueItem["client"]) {
+  const firstName = client.name.split(" ")[0] ?? "";
+  return body
+    .replaceAll("{firstName}", firstName)
+    .replaceAll("{favoriteInstructor}", client.favoriteInstructor ?? "your instructor")
+    .replaceAll("{lastClassDate}", `${client.daysSinceLast ?? 0} days ago`);
+}
+
+function toTemplateSendType(key: string): "atRisk" | "winback" | "welcome" | "milestone" | "reminder" {
+  if (key === "atRisk" || key === "winback" || key === "welcome" || key === "milestone" || key === "reminder") {
+    return key;
+  }
+  return "atRisk";
+}
+
 function Outreach({
   sendQueue,
   templates,
 }: {
   sendQueue: QueueItem[];
-  templates: { id: string; name: string; category: string; replyRate: number; bookingRate: number; revenue: number; body: string }[];
+  templates: TemplateItem[];
 }) {
   const sendOutreach = useSendOutreach();
   const [skipped, setSkipped] = useState<string[]>([]);
   const [active, setActive] = useState(sendQueue[0]?.id ?? null);
+  const [draftBodies, setDraftBodies] = useState<Record<string, string>>({});
+  const [selectedTemplates, setSelectedTemplates] = useState<Record<string, string>>({});
 
   const visibleQueue = useMemo(
     () => sendQueue.filter((q) => !skipped.includes(q.id)),
@@ -181,11 +216,20 @@ function Outreach({
   );
 
   const current = visibleQueue.find((q) => q.id === active) ?? visibleQueue[0];
+  const selectedTemplate = current
+    ? templates.find((t) => t.key === (selectedTemplates[current.id] ?? current.template.key))
+    : null;
+  const templateBody = current && selectedTemplate ? fillTemplate(selectedTemplate.body, current.client) : "";
+  const body = current ? (draftBodies[current.id] ?? templateBody) : "";
 
-  const body = current?.template.body
-    .replace("{first_name}", current?.client.name.split(" ")[0] ?? "")
-    .replace("{favorite_instructor}", current?.client.favoriteInstructor ?? "")
-    .replace("{last_class_date}", `${current?.client.daysSinceLast ?? 0} days ago`);
+  const resetDraft = () => {
+    if (!current) return;
+    setDraftBodies((d) => {
+      const next = { ...d };
+      delete next[current.id];
+      return next;
+    });
+  };
 
   const advance = () => {
     const idx = visibleQueue.findIndex((q) => q.id === current?.id);
@@ -195,12 +239,10 @@ function Outreach({
 
   const handleSend = () => {
     if (!current) return;
-    const type =
-      current.client.status === "Lapsed" || current.client.status === "Win-back"
-        ? "winback"
-        : "atRisk";
+    const type = toTemplateSendType(selectedTemplate?.key ?? current.template.key);
+    const customized = body !== templateBody;
     sendOutreach.mutate(
-      { memberId: current.memberId, type },
+      { memberId: current.memberId, type, body: customized ? body : undefined },
       {
         onSuccess: () => {
           toast.success(`Sent to ${current.client.name}`);
@@ -253,23 +295,52 @@ function Outreach({
         <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-5 shadow-soft">
           <SectionTitle
             title={`To: ${current?.client.name ?? "—"}`}
-            subtitle={`Template: ${current?.template.name}`}
+            subtitle={`Template: ${selectedTemplate?.name ?? current?.template.name ?? "—"}`}
             action={
-              <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+              <button
+                type="button"
+                onClick={resetDraft}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
                 <RotateCcw className="h-3.5 w-3.5" /> Reset to template
               </button>
             }
           />
+          <div className="mb-3">
+            <label className="text-xs text-muted-foreground mb-1 block">Template used</label>
+            <select
+              value={current ? (selectedTemplates[current.id] ?? current.template.key) : ""}
+              onChange={(e) => {
+                if (!current) return;
+                const nextKey = e.target.value;
+                setSelectedTemplates((s) => ({ ...s, [current.id]: nextKey }));
+                setDraftBodies((d) => {
+                  const next = { ...d };
+                  delete next[current.id];
+                  return next;
+                });
+              }}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              {templates.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.name} ({t.category})
+                </option>
+              ))}
+            </select>
+          </div>
           <textarea
             key={current?.id}
-            defaultValue={body}
+            value={body}
+            onChange={(e) => current && setDraftBodies((d) => ({ ...d, [current.id]: e.target.value }))}
             className="w-full min-h-[160px] rounded-xl border border-border bg-background p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <div className="flex items-center justify-between mt-3 flex-wrap gap-2">
             <div className="text-xs text-muted-foreground">
-              Merge tags: <code className="bg-muted px-1.5 py-0.5 rounded">{"{first_name}"}</code>{" "}
-              <code className="bg-muted px-1.5 py-0.5 rounded">{"{favorite_instructor}"}</code>{" "}
-              <code className="bg-muted px-1.5 py-0.5 rounded">{"{last_class_date}"}</code>
+              Merge tags:{" "}
+              <code className="bg-muted px-1.5 py-0.5 rounded">{"{firstName}"}</code>{" "}
+              <code className="bg-muted px-1.5 py-0.5 rounded">{"{favoriteInstructor}"}</code>{" "}
+              <code className="bg-muted px-1.5 py-0.5 rounded">{"{lastClassDate}"}</code>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -291,34 +362,155 @@ function Outreach({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <SectionTitle title="Template library" subtitle="Templates used for outreach campaigns" />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-xs text-muted-foreground border-b border-border">
-                <th className="text-left font-medium py-2">Template</th>
-                <th className="text-left font-medium py-2">Category</th>
-                <th className="text-left font-medium py-2">Reply rate</th>
-                <th className="text-left font-medium py-2">Booking rate</th>
-                <th className="text-right font-medium py-2">Revenue (90d)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {templates.map((t) => (
-                <tr key={t.id} className="border-b border-border/60 last:border-0">
-                  <td className="py-3 font-medium">{t.name}</td>
-                  <td className="py-3 text-muted-foreground">{t.category}</td>
-                  <td className="py-3">{Math.round(t.replyRate * 100)}%</td>
-                  <td className="py-3">{Math.round(t.bookingRate * 100)}%</td>
-                  <td className="py-3 text-right font-medium">${t.revenue.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+function TemplateLibrary({ templates }: { templates: TemplateItem[] }) {
+  const updateSettings = useUpdateSettings();
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+
+  const startEdit = (t: TemplateItem) => {
+    setEditingKey(t.key);
+    setDraft(t.body);
+  };
+
+  const cancelEdit = () => {
+    setEditingKey(null);
+    setDraft("");
+  };
+
+  const saveEdit = (key: string) => {
+    updateSettings.mutate(
+      { smsTemplates: { [key]: draft } },
+      {
+        onSuccess: () => {
+          toast.success("Template saved");
+          cancelEdit();
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+      <SectionTitle title="SMS template library" subtitle="Edit templates used for reminders and outreach" />
+      <div className="space-y-3">
+        {templates.map((t) => (
+          <div key={t.id} className="rounded-xl border border-border p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+              <div>
+                <div className="font-medium text-sm">{t.name}</div>
+                <div className="text-xs text-muted-foreground">{t.category}</div>
+              </div>
+              {editingKey !== t.key ? (
+                <button
+                  type="button"
+                  onClick={() => startEdit(t)}
+                  className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+                >
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => saveEdit(t.key)}
+                    disabled={updateSettings.isPending || !draft.trim()}
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium disabled:opacity-50"
+                  >
+                    <Save className="h-3 w-3" /> Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelEdit}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs hover:bg-muted"
+                  >
+                    <X className="h-3 w-3" /> Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+            {editingKey === t.key ? (
+              <>
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="w-full min-h-[100px] rounded-lg border border-border bg-background p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+                <p className="text-xs text-muted-foreground mt-2">
+                  Tags: {MERGE_TAGS.map((tag) => (
+                    <code key={tag} className="bg-muted px-1 py-0.5 rounded mr-1">{tag}</code>
+                  ))}
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{t.body}</p>
+            )}
+          </div>
+        ))}
       </div>
     </div>
+  );
+}
+
+function MessageLog({ entries }: { entries: MessageLogItem[] }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+      <SectionTitle title="Message log" subtitle="Every SMS sent from the platform" />
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-muted-foreground border-b border-border">
+              <th className="text-left font-medium py-2">Client</th>
+              <th className="text-left font-medium py-2">Type</th>
+              <th className="text-left font-medium py-2">Sent</th>
+              <th className="text-left font-medium py-2">Status</th>
+              <th className="text-left font-medium py-2">Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                  No messages sent yet. Use the outreach queue or send a test from Settings.
+                </td>
+              </tr>
+            ) : (
+              entries.map((m) => (
+                <tr key={m.id} className="border-b border-border/60 last:border-0">
+                  <td className="py-3 font-medium whitespace-nowrap">{m.client}</td>
+                  <td className="py-3 text-muted-foreground whitespace-nowrap">{m.template}</td>
+                  <td className="py-3 text-muted-foreground whitespace-nowrap">{m.sent}</td>
+                  <td className="py-3 whitespace-nowrap">
+                    <StatusBadge status={m.status} />
+                  </td>
+                  <td className="py-3 text-muted-foreground max-w-md truncate" title={m.body}>
+                    {m.body}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const sent = status === "sent" || status === "delivered";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-xs font-medium capitalize",
+        sent ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive"
+      )}
+    >
+      {sent && <Check className="h-3 w-3" />}
+      {status}
+    </span>
   );
 }

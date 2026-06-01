@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const syncLogSchema = new mongoose.Schema(
   {
+    ownerUid: { type: String, required: true, index: true },
     type: {
       type: String,
       enum: ["csv_import"],

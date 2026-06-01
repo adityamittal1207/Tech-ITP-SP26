@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 const classSchema = new mongoose.Schema(
   {
+    ownerUid: {
+      type: String,
+      required: true,
+      index: true,
+    },
     name: {
       type: String,
       required: [true, "Name is required"],
@@ -37,8 +42,18 @@ const classSchema = new mongoose.Schema(
       enum: ["yoga", "pilates", "hiit", "spin", "strength"],
       required: [true, "Category is required"],
     },
+    externalSource: {
+      type: String,
+      enum: ["mindbody", "native"],
+    },
+    externalId: {
+      type: String,
+      trim: true,
+    },
   },
   { timestamps: true }
 );
+
+classSchema.index({ externalSource: 1, externalId: 1 }, { sparse: true });
 
 export default mongoose.model("Class", classSchema);

@@ -20,17 +20,22 @@ export function enrichMember(member, bookings = [], now = Date.now()) {
   const lastBookedAt = bookings.length
     ? Math.max(...bookings.map((b) => new Date(b.bookedAt).getTime()))
     : null;
+  const daysSinceJoin = Math.max(
+    0,
+    Math.floor((now - new Date(doc.joinDate).getTime()) / 86_400_000)
+  );
+  // For members with no bookings, use a realistic inactivity value tied to tenure.
+  const estimatedNoBookingGap = Math.min(Math.max(daysSinceJoin, 28), 180);
   const daysSinceLast =
-    lastBookedAt != null ? Math.floor((now - lastBookedAt) / 86_400_000) : 999;
+    lastBookedAt != null
+      ? Math.floor((now - lastBookedAt) / 86_400_000)
+      : estimatedNoBookingGap;
 
   const ltv = Math.round(attended * (MEMBERSHIP_LTV[doc.membershipType] || 20));
 
   let reason;
   if (doc.status === "at-risk") {
-    reason =
-      daysSinceLast < 999
-        ? `${daysSinceLast} days since last visit`
-        : "No recent bookings on record";
+    reason = `${daysSinceLast} days since last visit`;
   }
 
   return {

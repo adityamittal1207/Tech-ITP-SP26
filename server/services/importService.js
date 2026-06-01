@@ -38,7 +38,7 @@ function requireFields(row, fields) {
   }
 }
 
-export async function importClasses(csvText) {
+export async function importClasses(csvText, ownerUid) {
   const { rows } = parseCsv(csvText);
   const errors = [];
   let imported = 0;
@@ -50,6 +50,7 @@ export async function importClasses(csvText) {
     try {
       requireFields(row, ["name", "instructor", "dayOfWeek", "time", "durationMinutes", "capacity", "category"]);
       const payload = {
+        ownerUid,
         name: row.name.trim(),
         instructor: row.instructor.trim(),
         dayOfWeek: row.dayOfWeek.trim().toLowerCase(),
@@ -59,6 +60,7 @@ export async function importClasses(csvText) {
         category: row.category.trim().toLowerCase(),
       };
       const existing = await Class.findOne({
+        ownerUid,
         name: payload.name,
         dayOfWeek: payload.dayOfWeek,
         time: payload.time,
@@ -78,7 +80,7 @@ export async function importClasses(csvText) {
   return { imported, updated, errors };
 }
 
-export async function importMembers(csvText) {
+export async function importMembers(csvText, ownerUid, defaultSource = "native") {
   const { rows } = parseCsv(csvText);
   const errors = [];
   let imported = 0;
@@ -99,10 +101,12 @@ export async function importMembers(csvText) {
       }
 
       const payload = {
+        ownerUid,
         name: row.name.trim(),
         email,
         phone,
         membershipType: row.membershipType.trim().toLowerCase(),
+        source: row.source?.trim().toLowerCase() || defaultSource,
         joinDate: row.joinDate ? new Date(row.joinDate) : new Date(),
         joinSource: row.joinSource?.trim() || "Walk-in",
         isActive: row.isActive !== "false",
@@ -110,7 +114,7 @@ export async function importMembers(csvText) {
         tags: row.tags ? row.tags.split("|").map((t) => t.trim()).filter(Boolean) : [],
       };
 
-      const existing = await Member.findOne({ email });
+      const existing = await Member.findOne({ ownerUid, email });
       if (existing) {
         await Member.findByIdAndUpdate(existing._id, payload, { runValidators: true });
         updated++;
@@ -126,7 +130,7 @@ export async function importMembers(csvText) {
   return { imported, updated, errors };
 }
 
-export async function importBookings(csvText) {
+export async function importBookings(csvText, ownerUid) {
   const { rows } = parseCsv(csvText);
   const errors = [];
   let imported = 0;
@@ -139,10 +143,13 @@ export async function importBookings(csvText) {
   for (const row of rows) {
     try {
       requireFields(row, ["memberEmail", "className", "bookedAt"]);
-      const member = await Member.findOne({ email: row.memberEmail.trim().toLowerCase() });
+      const member = await Member.findOne({
+        ownerUid,
+        email: row.memberEmail.trim().toLowerCase(),
+      });
       if (!member) throw new Error(`Row ${row._row}: member not found ${row.memberEmail}`);
 
-      const cls = await Class.findOne({ name: row.className.trim() });
+      const cls = await Class.findOne({ ownerUid, name: row.className.trim() });
       if (!cls) throw new Error(`Row ${row._row}: class not found ${row.className}`);
 
       const bookedAt = new Date(row.bookedAt);
@@ -163,6 +170,7 @@ export async function importBookings(csvText) {
         updated++;
       } else {
         await Booking.create({
+          ownerUid,
           memberId: member._id,
           classId: cls._id,
           bookedAt,
@@ -180,11 +188,34 @@ export async function importBookings(csvText) {
 
 export const CSV_TEMPLATES = {
   classes: `name,instructor,dayOfWeek,time,durationMinutes,capacity,category
-Morning Flow,Sandra Lee,monday,07:00,60,20,yoga
-Power Pilates,Tom Briggs,monday,09:30,50,15,pilates`,
+Sunrise Vinyasa,Sandra Lee,monday,06:30,60,20,yoga
+Strength Foundations,Tom Briggs,monday,09:30,50,15,strength`,
   members: `name,email,phone,joinDate,membershipType,joinSource,tags,notes
-Jane Doe,jane.doe@email.com,+16195551234,2025-01-15,premium,Referral,VIP,Loves morning classes`,
+Taylor Morgan,taylor.morgan@tidewatermembers.com,+16193491234,2025-01-15,premium,Referral,VIP|Local,Prefers morning classes`,
   bookings: `memberEmail,className,bookedAt,attended
-jane.doe@email.com,Morning Flow,2025-05-20,true
-jane.doe@email.com,Power Pilates,2025-05-15,true`,
+taylor.morgan@tidewatermembers.com,Sunrise Vinyasa,2025-05-20,true
+taylor.morgan@tidewatermembers.com,Strength Foundations,2025-05-15,true`,
+};
+
+export const IMPORT_SOURCES = ["native", "mindbody", "acuity"];
+
+export const EXPORT_GUIDES = {
+  mindbody: {
+    name: "Mindbody",
+    steps: [
+      "In Mindbody, open Reports → Clients (or Client List) and export to CSV.",
+      "For classes: Reports → Class Schedule or export your recurring schedule.",
+      "For visits: Reports → Attendance / Visit History and export with client email and class name.",
+      "Map columns to our templates (download below), then upload members → classes → bookings in that order.",
+    ],
+  },
+  acuity: {
+    name: "Acuity Scheduling",
+    steps: [
+      "In Acuity: Clients → export client list as CSV.",
+      "Appointment Types: note names for the classes template (one row per type or recurring slot).",
+      "Appointments: export appointments with client email, type name, date/time, and attended/canceled status.",
+      "Upload members first, then classes, then bookings using the templates below.",
+    ],
+  },
 };

@@ -21,14 +21,20 @@ const LAST = [
   "Ivers", "Solis", "Crane", "Maddox", "Beauchamp", "Suzuki", "Aldridge",
 ];
 const CHANNELS = ["Instagram", "Groupon", "Referral", "Walk-in"];
+const JOIN_SOURCE_TO_SOURCE = {
+  Instagram: "instagram",
+  Groupon: "groupon",
+  Referral: "referral",
+  "Walk-in": "walk-in",
+};
 const ALL_TAGS = ["VIP", "Surfer", "Member", "Pregnant", "New mom", "Senior", "Tourist", "Local"];
 const MEMBERSHIP_TYPES = ["basic", "premium", "unlimited"];
 const NOTES = [
-  "Loves sunrise classes. Surfs on weekends.",
-  "Recovering from shoulder injury — modify chaturanga.",
-  "Referred 3 friends in the last 6 months.",
-  "Prefers restorative classes. Avoid loud music.",
-  "Travels often — usually books 1 wk ahead.",
+  "Prefers 6:30 AM classes before work.",
+  "Recovering from shoulder strain; avoids overhead presses.",
+  "Referred three coworkers this quarter.",
+  "Usually books restorative classes midweek.",
+  "Travels twice a month and books early when in town.",
   "",
 ];
 
@@ -53,8 +59,8 @@ function makeMemberProfile(i, targetStatus) {
   const first = FIRST[i % FIRST.length];
   const last = LAST[(i * 7) % LAST.length];
   const slug = last.toLowerCase().replace(/[^a-z]/g, "");
-  const email = `${first.toLowerCase()}.${slug}${i > 49 ? i : ""}@email.com`;
-  const phone = `+1619555${String(1000 + i).slice(-4)}`;
+  const email = `${first.toLowerCase()}.${slug}${i > 49 ? i : ""}@tidewatermembers.com`;
+  const phone = `+1619349${String(1000 + i).slice(-4)}`;
 
   let joinDaysAgo;
   let lastBookingDaysAgo;
@@ -80,7 +86,7 @@ function makeMemberProfile(i, targetStatus) {
       joinDaysAgo = Math.floor(rand() * 600) + 120;
       if (rand() < 0.15) {
         bookingOffsets = [];
-        lastBookingDaysAgo = 999;
+        lastBookingDaysAgo = 120;
       } else {
         lastBookingDaysAgo = 25 + Math.floor(rand() * 120);
         bookingOffsets = buildHistory(lastBookingDaysAgo, 2 + Math.floor(rand() * 6));
@@ -148,8 +154,10 @@ export function generateOperationalSeed(memberCount = 150) {
     ...statusBuckets.map((status, i) => makeMemberProfile(i, status)),
   ];
 
-  const memberDocs = memberProfiles.map(({ bookingOffsets: _o, joinDaysAgo, ...fields }) => ({
+  const memberDocs = memberProfiles.map(({ bookingOffsets: _o, joinDaysAgo, joinSource, ...fields }) => ({
     ...fields,
+    joinSource,
+    source: JOIN_SOURCE_TO_SOURCE[joinSource] ?? "walk-in",
     joinDate: daysAgo(joinDaysAgo),
     isActive: true,
   }));

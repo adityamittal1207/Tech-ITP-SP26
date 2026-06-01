@@ -4,6 +4,7 @@ import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import Message from "../models/Message.js";
 import { enrichMember, groupBookingsByMember } from "../services/memberStats.js";
+import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
 
 const DAY_NAMES = [
   "sunday",
@@ -34,17 +35,18 @@ function relativeTime(date) {
   return days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
-export async function getHomeDashboard(_req, res, next) {
+export async function getHomeDashboard(req, res, next) {
   try {
+    const filter = ownerFilter(getOwnerUid(req));
     const now = Date.now();
     const todayKey = new Date().toISOString().slice(0, 10);
     const todayDow = DAY_NAMES[new Date().getDay()];
 
     const [members, bookings, classes, messages] = await Promise.all([
-      Member.find(),
-      Booking.find().populate("memberId", "name").populate("classId", "name instructor"),
-      Class.find(),
-      Message.find().populate("memberId", "name").sort({ sentAt: -1 }).limit(10),
+      Member.find(filter),
+      Booking.find(filter).populate("memberId", "name").populate("classId", "name instructor"),
+      Class.find(filter),
+      Message.find(filter).populate("memberId", "name").sort({ sentAt: -1 }).limit(10),
     ]);
 
     const byMember = groupBookingsByMember(bookings);

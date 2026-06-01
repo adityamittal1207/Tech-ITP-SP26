@@ -96,7 +96,7 @@ function makeClient(i) {
   return {
     id: `c${i + 1}`,
     name,
-    email: `${first.toLowerCase()}.${last.toLowerCase().replace(/[^a-z]/g, "")}@email.com`,
+    email: `${first.toLowerCase()}.${last.toLowerCase().replace(/[^a-z]/g, "")}@tidewatermembers.com`,
     status,
     joinDate: join.toISOString().slice(0, 10),
     joinSource: pick(CHANNELS),
@@ -108,11 +108,11 @@ function makeClient(i) {
     reason,
     tags,
     notes: pick([
-      "Loves sunrise classes. Surfs Swami's on weekends.",
-      "Recovering from shoulder injury — modify chaturanga.",
-      "Referred 3 friends in the last 6 months. VIP.",
-      "Prefers Priya for restorative. Avoid loud music.",
-      "Travels often — usually books 1 wk ahead.",
+      "Usually takes the 6 AM flow before work.",
+      "Recovering from shoulder strain — avoids overhead work.",
+      "Referred three friends this season. VIP member.",
+      "Prefers Priya's restorative sessions and quieter playlists.",
+      "Travels frequently and books classes a week in advance.",
       "",
     ]),
   };
@@ -234,7 +234,7 @@ export function generateStudioData() {
   ];
 
   const reminderExamples = [
-    { id: "ex1", body: "Hey Ruby — your Sunrise Flow with Sam is tomorrow at 6 AM. Reply Y to confirm or C to cancel. Sea you there 🌊 — Tidewater" },
+    { id: "ex1", body: "Hey Ruby — your Sunrise Flow with Sam is tomorrow at 6 AM. Reply Y to confirm or C to cancel. See you there 🌊 — Tidewater" },
     { id: "ex2", body: "Liam — a spot just opened in 5:30 Power Vinyasa tonight w/ Theo. Reply Y in the next 10 min and it's yours. — Tidewater" },
     { id: "ex3", body: "Hi Tess — we missed you at 12 PM Yin today. Want us to rebook you for Priya's 12 PM on Thursday? Reply R. — Tidewater" },
   ];
