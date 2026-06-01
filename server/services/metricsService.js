@@ -21,6 +21,14 @@ const CHANNEL_LABELS = {
 const OUTREACH_TYPES = new Set(["atRisk", "winback", "welcome"]);
 const MS_PER_DAY = 86_400_000;
 
+const TIER_MRR = { basic: 79, premium: 129, unlimited: 189 };
+const TIER_REV = { basic: 15, premium: 28, unlimited: 45 };
+
+export function percentDelta(current, previous) {
+  if (previous === 0) return current > 0 ? 100 : 0;
+  return Math.round(((current - previous) / previous) * 1000) / 10;
+}
+
 export function getMemberChannel(member) {
   if (member.source) return member.source;
   if (member.joinSource && JOIN_SOURCE_MAP[member.joinSource]) {
@@ -253,6 +261,261 @@ export function computeSmsConversion(messages, bookings, options = {}) {
       conversionRate: totalSent > 0 ? Math.round((totalConverted / totalSent) * 100) : 0,
     },
   };
+}
+
+function uniqueAttendedMembers(bookings, startMs, endMs) {
+  const ids = new Set();
+  for (const b of bookings) {
+    const t = new Date(b.bookedAt).getTime();
+    if (t >= startMs && t < endMs && b.attended) ids.add(memberIdStr(b));
+  }
+  return ids;
+}
+
+function fillRateInWindow(bookings, startMs, endMs) {
+  const subset = bookings.filter((b) => {
+    const t = new Date(b.bookedAt).getTime();
+    return t >= startMs && t < endMs;
+  });
+  if (!subset.length) return 0;
+  return Math.round((subset.filter((b) => b.attended).length / subset.length) * 100);
+}
+
+function mrrForEngaged(members, memberIds) {
+  return members
+    .filter((m) => memberIds.has(String(m._id)) && m.isActive)
+    .reduce((sum, m) => sum + (TIER_MRR[m.membershipType] || 0), 0);
+}
+
+function churnProxyPct(members, bookings, byMember, asOfMs) {
+  if (!members.length) return 0;
+  let lapsedLike = 0;
+  for (const m of members) {
+    const bks = (byMember[String(m._id)] ?? []).filter((b) => b.attended);
+    const last = bks.reduce((max, b) => {
+      const t = new Date(b.bookedAt).getTime();
+      return t <= asOfMs && t > max ? t : max;
+    }, 0);
+    const daysSince = last ? (asOfMs - last) / MS_PER_DAY : 999;
+    if (daysSince >= 21) lapsedLike++;
+  }
+  return Math.round((lapsedLike / members.length) * 1000) / 10;
+}
+
+function fourVisitConversionPct(members, byMember, joinStartMs, joinEndMs) {
+  const cohort = members.filter((m) => {
+    const j = new Date(m.joinDate).getTime();
+    return j >= joinStartMs && j < joinEndMs;
+  });
+  if (!cohort.length) return 0;
+  const reached = cohort.filter(
+    (m) => (byMember[String(m._id)] ?? []).filter((b) => b.attended).length >= 4
+  );
+  return Math.round((reached.length / cohort.length) * 100);
+}
+
+export function computeHomeKpiDeltas(members, bookings, byMember) {
+  const now = Date.now();
+  const curStart = now - 30 * MS_PER_DAY;
+  const prevStart = now - 60 * MS_PER_DAY;
+
+  const curEngaged = uniqueAttendedMembers(bookings, curStart, now);
+  const prevEngaged = uniqueAttendedMembers(bookings, prevStart, curStart);
+
+  const activeMembers = members.filter((m) => m.isActive).length;
+  const mrr = members
+    .filter((m) => m.isActive && m.status !== "lapsed")
+    .reduce((sum, m) => sum + (TIER_MRR[m.membershipType] || 0), 0);
+  const attendanceRate = bookings.length
+    ? Math.round((bookings.filter((b) => b.attended).length / bookings.length) * 100)
+    : 0;
+  const churnRate = members.length
+    ? Math.round((members.filter((m) => m.status === "lapsed").length / members.length) * 1000) / 10
+    : 0;
+  const fourVisit = members.length
+    ? Math.round(
+        (members.filter((m) => (byMember[String(m._id)]?.length ?? 0) >= 4).length /
+          members.length) *
+          100
+      )
+    : 0;
+
+  return [
+    {
+      label: "Active Clients",
+      value: activeMembers,
+      delta: percentDelta(curEngaged.size, prevEngaged.size),
+      unit: "",
+    },
+    {
+      label: "MRR",
+      value: mrr,
+      delta: percentDelta(mrrForEngaged(members, curEngaged), mrrForEngaged(members, prevEngaged)),
+      unit: "$",
+    },
+    {
+      label: "Fill Rate",
+      value: attendanceRate,
+      delta: percentDelta(fillRateInWindow(bookings, curStart, now), fillRateInWindow(bookings, prevStart, curStart)),
+      unit: "%",
+    },
+    {
+      label: "Churn Rate",
+      value: churnRate,
+      delta: percentDelta(churnRate, churnProxyPct(members, bookings, byMember, curStart)),
+      unit: "%",
+      invert: true,
+    },
+    {
+      label: "4-Visit Conversion",
+      value: fourVisit,
+      delta: percentDelta(
+        fourVisitConversionPct(members, byMember, curStart, now),
+        fourVisitConversionPct(members, byMember, prevStart, curStart)
+      ),
+      unit: "%",
+    },
+  ];
+}
+
+export function computeCohortRetention(members, bookings) {
+  const cohortMap = {};
+  for (const m of members) {
+    const d = new Date(m.joinDate);
+    const key = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '");
+    if (!cohortMap[key]) cohortMap[key] = { members: [], monthDate: d };
+    cohortMap[key].members.push(m);
+  }
+
+  const retentionRate = (cohort, days) => {
+    if (!cohort.length) return 0;
+    let retained = 0;
+    for (const m of cohort) {
+      const join = new Date(m.joinDate).getTime();
+      if (attendedInWindow(bookings, String(m._id), join, join + days * MS_PER_DAY).length > 0) {
+        retained++;
+      }
+    }
+    return Math.round((retained / cohort.length) * 100);
+  };
+
+  return Object.entries(cohortMap)
+    .sort((a, b) => a[1].monthDate - b[1].monthDate)
+    .slice(-12)
+    .map(([month, { members: cohort, monthDate }]) => {
+      const ageDays = (Date.now() - monthDate.getTime()) / MS_PER_DAY;
+      return {
+        month,
+        size: cohort.length,
+        m1: retentionRate(cohort, 30),
+        m3: ageDays >= 90 ? retentionRate(cohort, 90) : null,
+        m6: ageDays >= 180 ? retentionRate(cohort, 180) : null,
+        m12: ageDays >= 365 ? retentionRate(cohort, 365) : null,
+      };
+    });
+}
+
+export function computeClassDetail(className, bookings, classes, members) {
+  const classIds = new Set(
+    classes.filter((c) => c.name === className).map((c) => String(c._id))
+  );
+  const relevant = bookings.filter((b) => classIds.has(classIdStr(b)));
+  const classRows = classes.filter((c) => classIds.has(String(c._id)));
+  const weeklyCapacity = classRows.reduce((s, c) => s + c.capacity, 0);
+  const now = Date.now();
+
+  const trend = Array.from({ length: 12 }, (_, i) => {
+    const weekStart = now - (11 - i) * 7 * MS_PER_DAY;
+    const weekEnd = weekStart + 7 * MS_PER_DAY;
+    const weekBookings = relevant.filter((b) => {
+      const t = new Date(b.bookedAt).getTime();
+      return t >= weekStart && t < weekEnd;
+    });
+    return {
+      wk: `W${i + 1}`,
+      attended: weekBookings.filter((b) => b.attended).length,
+      capacity: weeklyCapacity,
+      noShow: weekBookings.filter((b) => !b.attended).length,
+    };
+  });
+
+  const twelveWeeksAgo = now - 12 * 7 * MS_PER_DAY;
+  const recent = relevant.filter((b) => new Date(b.bookedAt).getTime() >= twelveWeeksAgo);
+  const attended = recent.filter((b) => b.attended).length;
+  const total = recent.length;
+  const noShowRatePct = total > 0 ? Math.round(((total - attended) / total) * 1000) / 10 : 0;
+  const slotCapacity = weeklyCapacity * 12;
+  const avgFillPct = slotCapacity > 0 ? Math.round((attended / slotCapacity) * 100) : 0;
+
+  const counts = {};
+  for (const b of recent.filter((x) => x.attended)) {
+    const id = memberIdStr(b);
+    counts[id] = (counts[id] || 0) + 1;
+  }
+  const memberById = Object.fromEntries(members.map((m) => [String(m._id), m]));
+  const topRegulars = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([id, visits]) => ({
+      name: memberById[id]?.name ?? "Member",
+      visits,
+    }));
+
+  return { trend, topRegulars, avgFillPct, noShowRatePct };
+}
+
+export function computeRevPashTrend(bookings, classes, members, now = Date.now()) {
+  const memberById = Object.fromEntries(members.map((m) => [String(m._id), m]));
+  const weeklySeatHours = classes.reduce(
+    (s, c) => s + c.capacity * (c.durationMinutes / 60),
+    0
+  );
+
+  const revpashTrend = Array.from({ length: 12 }, (_, i) => {
+    const weekStart = now - (11 - i) * 7 * MS_PER_DAY;
+    const weekEnd = weekStart + 7 * MS_PER_DAY;
+    const weekBookings = bookings.filter((b) => {
+      const t = new Date(b.bookedAt).getTime();
+      return t >= weekStart && t < weekEnd && b.attended;
+    });
+    const revenue = weekBookings.reduce((sum, b) => {
+      const m = memberById[memberIdStr(b)];
+      return sum + (TIER_REV[m?.membershipType] ?? 20);
+    }, 0);
+    const revpash = weeklySeatHours > 0 ? +(revenue / weeklySeatHours).toFixed(2) : 0;
+    return { wk: `W${i + 1}`, revpash };
+  });
+
+  const currentRevpash = revpashTrend[revpashTrend.length - 2]?.revpash
+    ?? revpashTrend[revpashTrend.length - 1]?.revpash
+    ?? 0;
+  const priorRevpash = revpashTrend[revpashTrend.length - 3]?.revpash
+    ?? revpashTrend[revpashTrend.length - 2]?.revpash
+    ?? 0;
+
+  return {
+    revpashTrend,
+    currentRevpash,
+    revpashDeltaPct: percentDelta(currentRevpash, priorRevpash),
+  };
+}
+
+export function attendanceByMonth(memberBookings, months = 12) {
+  const now = new Date();
+  return Array.from({ length: months }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1);
+    const start = d.getTime();
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+    const visits = memberBookings.filter((b) => {
+      if (!b.attended) return false;
+      const t = new Date(b.bookedAt).getTime();
+      return t >= start && t <= end;
+    }).length;
+    return {
+      m: d.toLocaleDateString("en-US", { month: "short" }),
+      visits,
+    };
+  });
 }
 
 export function smsSummaryFromConversion(smsConversion) {

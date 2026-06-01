@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
+import { MetricTerm } from "@/components/MetricTerm";
+import { KPI_DELTA_METRIC } from "@/lib/metric-explanations";
 import { useHomePage } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +49,15 @@ function Home() {
   if (isLoading) return <PageLoader />;
   if (isError || !data) return <PageError message={error?.message ?? "Failed to load dashboard"} />;
 
-  const { studio, kpis: KPIS, todayClasses: TODAY_CLASSES, actionItems: ACTION_ITEMS, activityFeed: ACTIVITY_FEED, visitsTrend: VISITS_TREND } = data;
+  const {
+    studio,
+    kpis: KPIS,
+    todayClasses: TODAY_CLASSES,
+    todaySummary,
+    actionItems: ACTION_ITEMS,
+    activityFeed: ACTIVITY_FEED,
+    visitsTrend: VISITS_TREND,
+  } = data;
 
   return (
     <div className="space-y-8">
@@ -63,7 +73,9 @@ function Home() {
           const Arrow = k.delta >= 0 ? ArrowUpRight : ArrowDownRight;
           return (
             <div key={k.label} className="rounded-2xl border border-border bg-card p-4 shadow-soft">
-              <div className="text-xs text-muted-foreground">{k.label}</div>
+              <div className="text-xs text-muted-foreground">
+                <MetricTerm metric={k.label} />
+              </div>
               <div className="mt-1.5 flex items-baseline gap-2">
                 <div className="font-display text-2xl font-semibold">{fmt(k.value, k.unit)}</div>
               </div>
@@ -72,7 +84,9 @@ function Home() {
                 positive ? "text-success" : "text-destructive"
               )}>
                 <Arrow className="h-3.5 w-3.5" />
-                {Math.abs(k.delta)}% vs prior 30d
+                <MetricTerm metric={KPI_DELTA_METRIC[k.label] ?? "vs prior 30d"}>
+                  {Math.abs(k.delta)}% vs prior 30d
+                </MetricTerm>
               </div>
             </div>
           );
@@ -81,7 +95,19 @@ function Home() {
 
       {/* Visits trend */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <SectionTitle title="Visits — last 30 days" subtitle="Class bookings vs no-shows" />
+        <SectionTitle
+          title={
+            <>
+              <MetricTerm metric="Visits" /> — last 30 days
+            </>
+          }
+          subtitle={
+            <>
+              Class bookings vs{" "}
+              <MetricTerm metric="No-shows" />
+            </>
+          }
+        />
         <div className="h-56">
           <ResponsiveContainer>
             <AreaChart data={VISITS_TREND} margin={{ left: -16, top: 8, right: 8, bottom: 0 }}>
@@ -105,7 +131,14 @@ function Home() {
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Today's classes */}
         <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <SectionTitle title="Today's classes" subtitle="6 classes · 80 booked seats" />
+          <SectionTitle
+            title="Today's classes"
+            subtitle={
+              (todaySummary?.classCount ?? TODAY_CLASSES.length) > 0
+                ? `${todaySummary?.classCount ?? TODAY_CLASSES.length} classes · ${todaySummary?.bookedSeats ?? TODAY_CLASSES.reduce((s, c) => s + c.booked, 0)} booked seats`
+                : "No classes scheduled today"
+            }
+          />
           <div className="space-y-2">
             {TODAY_CLASSES.map((c) => {
               const pct = c.booked / c.capacity;
@@ -120,7 +153,8 @@ function Home() {
                       <div className="font-medium truncate">{c.name}</div>
                       {under && (
                         <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide font-semibold text-warning-foreground bg-warning/30 rounded-full px-2 py-0.5">
-                          <AlertTriangle className="h-3 w-3" /> Under-booked
+                          <AlertTriangle className="h-3 w-3" />{" "}
+                          <MetricTerm metric="Under-booked" />
                         </span>
                       )}
                     </div>

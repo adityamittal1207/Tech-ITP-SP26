@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
+import { MetricTerm } from "@/components/MetricTerm";
 import {
   STATUSES, statusColor, type Client, type ClientStatus,
 } from "@/lib/mock-data";
@@ -73,7 +74,12 @@ function ClientsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Clients & Retention"
-        subtitle={`${CLIENTS.length} clients · ${COUNTS["At-Risk"]} flagged at-risk this week`}
+        subtitle={
+          <>
+            {CLIENTS.length} clients ·{" "}
+            <MetricTerm metric="At-Risk">{COUNTS["At-Risk"]} flagged at-risk</MetricTerm> this week
+          </>
+        }
       />
 
       {/* Status overview */}
@@ -88,11 +94,23 @@ function ClientsPage() {
             )}
           >
             <div className="flex items-center justify-between">
-              <StatusChip s={s} />
+              <MetricTerm metric={s}>
+                <StatusChip s={s} />
+              </MetricTerm>
               <div className="font-display text-xl font-semibold">{COUNTS[s]}</div>
             </div>
             <div className="text-xs text-muted-foreground mt-2">
-              {s === "At-Risk" ? "Need outreach" : s === "Win-back" ? "Recently re-engaged" : s === "Lapsed" ? "60+ days inactive" : s === "New" ? "Joined < 30d" : "Active members"}
+              {s === "At-Risk" ? (
+                <MetricTerm metric="Why at risk">Need outreach</MetricTerm>
+              ) : s === "Win-back" ? (
+                <MetricTerm metric="Win-back">Recently re-engaged</MetricTerm>
+              ) : s === "Lapsed" ? (
+                <MetricTerm metric="Lapsed">60+ days inactive</MetricTerm>
+              ) : s === "New" ? (
+                <MetricTerm metric="New">Joined &lt; 30d</MetricTerm>
+              ) : (
+                <MetricTerm metric="Regular">Active members</MetricTerm>
+              )}
             </div>
           </button>
         ))}
@@ -100,14 +118,25 @@ function ClientsPage() {
 
       {/* Section A — At-risk */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <SectionTitle title="At-risk — sorted by LTV" subtitle="One-click outreach, template auto-selected per signal" />
+        <SectionTitle
+          title={
+            <>
+              <MetricTerm metric="At-Risk">At-risk</MetricTerm> — sorted by LTV
+            </>
+          }
+          subtitle="One-click outreach, template auto-selected per signal"
+        />
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-muted-foreground border-b border-border">
                 <th className="text-left font-medium py-2">Client</th>
-                <th className="text-left font-medium py-2">LTV</th>
-                <th className="text-left font-medium py-2">Why at risk</th>
+                <th className="text-left font-medium py-2">
+                  <MetricTerm metric="LTV" />
+                </th>
+                <th className="text-left font-medium py-2">
+                  <MetricTerm metric="Why at risk" />
+                </th>
                 <th className="text-left font-medium py-2">Suggested template</th>
                 <th className="text-right font-medium py-2">Action</th>
               </tr>
@@ -174,9 +203,15 @@ function ClientsPage() {
                 <th className="text-left font-medium py-2">Status</th>
                 <th className="text-left font-medium py-2">Membership</th>
                 <th className="text-left font-medium py-2">Source</th>
-                <th className="text-left font-medium py-2">90-day visits</th>
-                <th className="text-left font-medium py-2">Last visit</th>
-                <th className="text-right font-medium py-2">LTV</th>
+                <th className="text-left font-medium py-2">
+                  <MetricTerm metric="90-day visits" />
+                </th>
+                <th className="text-left font-medium py-2">
+                  <MetricTerm metric="Last visit" />
+                </th>
+                <th className="text-right font-medium py-2">
+                  <MetricTerm metric="LTV" />
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -199,7 +234,18 @@ function ClientsPage() {
       {/* Section C — Cohort retention */}
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <div className="flex items-end justify-between gap-3 mb-4 flex-wrap">
-          <SectionTitle title="Cohort retention" subtitle="% of signup cohort still active at M1 / M3 / M6 / M12" />
+          <SectionTitle
+            title={<MetricTerm metric="Cohort retention" />}
+            subtitle={
+              <>
+                % of signup cohort with an attended visit by{" "}
+                <MetricTerm metric="M1">M1</MetricTerm> /{" "}
+                <MetricTerm metric="M3">M3</MetricTerm> /{" "}
+                <MetricTerm metric="M6">M6</MetricTerm> /{" "}
+                <MetricTerm metric="M12">M12</MetricTerm>
+              </>
+            }
+          />
           <select
             value={cohortChannel}
             onChange={(e) => setCohortChannel(e.target.value)}
@@ -214,7 +260,11 @@ function ClientsPage() {
               <tr className="text-xs text-muted-foreground">
                 <th className="text-left font-medium py-1 pr-3">Cohort</th>
                 <th className="text-left font-medium py-1 pr-3">Size</th>
-                {["M1","M3","M6","M12"].map((m) => <th key={m} className="text-center font-medium py-1 px-2">{m}</th>)}
+                {["M1","M3","M6","M12"].map((m) => (
+                  <th key={m} className="text-center font-medium py-1 px-2">
+                    <MetricTerm metric={m}>{m}</MetricTerm>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -270,11 +320,8 @@ function ClientDrawer({
   onSend: () => void;
   sending: boolean;
 }) {
-  // Build a fake 12-month attendance series for this client
-  const series = Array.from({ length: 12 }, (_, i) => ({
-    m: `M${i + 1}`,
-    visits: Math.max(0, Math.round(6 + Math.sin((i + client.name.length) / 2) * 4 + ((client.name.charCodeAt(0) + i) % 5))),
-  }));
+  const series = client.attendanceMonthly ?? [];
+  const messages = client.recentMessages ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex">
@@ -299,14 +346,17 @@ function ClientDrawer({
 
         <div className="p-5 space-y-5">
           <div className="grid grid-cols-3 gap-3">
-            <Stat label="LTV" value={`$${client.ltv.toLocaleString()}`} />
-            <Stat label="90-day visits" value={String(client.visits90)} />
-            <Stat label="Last visit" value={`${client.daysSinceLast}d`} />
+            <Stat label="LTV" metric="LTV" value={`$${client.ltv.toLocaleString()}`} />
+            <Stat label="90-day visits" metric="90-day visits" value={String(client.visits90)} />
+            <Stat label="Last visit" metric="Last visit" value={`${client.daysSinceLast}d`} />
           </div>
 
           <div>
             <div className="text-xs font-medium text-muted-foreground mb-2">Attendance — last 12 months</div>
             <div className="flex items-end gap-1 h-24">
+              {series.length === 0 && (
+                <div className="text-xs text-muted-foreground">No attendance in the last 12 months.</div>
+              )}
               {series.map((s) => (
                 <div key={s.m} className="flex-1 flex flex-col items-center gap-1">
                   <div
@@ -327,9 +377,15 @@ function ClientDrawer({
           <div>
             <div className="text-xs font-medium text-muted-foreground mb-2">Recent messages</div>
             <div className="space-y-2">
-              <Msg out body="Hey — haven't seen you in a bit. Priya's teaching Yin Thursday if you want a soft re-entry 🌊" time="2d ago" />
-              <Msg body="Yes please! Book me in." time="2d ago" />
-              <Msg out body="Done — see you at 12!" time="2d ago" />
+              {messages.length > 0 ? (
+                messages.map((m) => (
+                  <Msg key={m.id} out={m.out} body={m.body} time={m.time} />
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground rounded-lg border border-border p-3">
+                  No outreach messages logged yet.
+                </div>
+              )}
             </div>
           </div>
 
@@ -346,10 +402,12 @@ function ClientDrawer({
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, metric, value }: { label: string; metric: string; value: string }) {
   return (
     <div className="rounded-xl border border-border p-3">
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        <MetricTerm metric={metric}>{label}</MetricTerm>
+      </div>
       <div className="font-display text-lg font-semibold mt-0.5">{value}</div>
     </div>
   );

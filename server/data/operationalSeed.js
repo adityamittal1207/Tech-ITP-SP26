@@ -165,17 +165,75 @@ export function generateOperationalSeed(memberCount = 150) {
   return { memberProfiles, memberDocs, classData: CLASS_DATA };
 }
 
+function classIndexFor(memberIdx, bookingIdx, classes) {
+  return (memberIdx * 7 + bookingIdx * 11) % classes.length;
+}
+
 export function buildBookings(memberProfiles, classes) {
   const bookings = [];
   memberProfiles.forEach((profile, memberIdx) => {
     profile.bookingOffsets.forEach((offset, bookingIdx) => {
       bookings.push({
         memberIdx,
-        classIdx: (memberIdx + bookingIdx) % classes.length,
+        classIdx: classIndexFor(memberIdx, bookingIdx, classes),
         bookedAt: daysAgo(offset),
         attended: rand() > 0.2,
       });
     });
   });
+  return bookings;
+}
+
+/** Extra bookings in the prior 30-day window so KPI period deltas are non-zero. */
+export function buildSupplementalBookings(memberProfiles, classes) {
+  const bookings = [];
+  memberProfiles.forEach((profile, memberIdx) => {
+    const extraCount = 2 + Math.floor(rand() * 3);
+    for (let i = 0; i < extraCount; i++) {
+      const offset = 31 + Math.floor(rand() * 24);
+      bookings.push({
+        memberIdx,
+        classIdx: classIndexFor(memberIdx, 20 + i, classes),
+        bookedAt: daysAgo(offset),
+        attended: rand() > 0.15,
+      });
+    }
+  });
+  return bookings;
+}
+
+const DAY_NAMES = [
+  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+];
+
+/** Bookings dated today for classes on today's weekday — powers dashboard fill. */
+export function buildTodayBookings(memberProfiles, classes) {
+  const today = new Date();
+  const todayDow = DAY_NAMES[today.getDay()];
+  const todayClasses = classes.filter((c) => c.dayOfWeek === todayDow);
+  const bookings = [];
+  let memberIdx = 0;
+
+  for (const cls of todayClasses) {
+    const targetBooked = Math.max(1, Math.floor(cls.capacity * (0.45 + rand() * 0.4)));
+    for (let i = 0; i < targetBooked; i++) {
+      const [hStr, mStr] = cls.time.split(":");
+      const bookedAt = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        Number(hStr),
+        Number(mStr),
+        0,
+        0
+      );
+      bookings.push({
+        memberIdx: memberIdx++ % memberProfiles.length,
+        classIdx: classes.indexOf(cls),
+        bookedAt,
+        attended: false,
+      });
+    }
+  }
   return bookings;
 }

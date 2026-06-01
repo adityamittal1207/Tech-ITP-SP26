@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { ExplainTerm } from "@/components/ExplainTerm";
+import { MetricTerm } from "@/components/MetricTerm";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
 import { useSendOutreach, useUpdateSettings } from "@/hooks/use-studio-mutations";
@@ -101,17 +101,17 @@ function CommsPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 shadow-soft">
           <p className="text-sm text-muted-foreground">
             Last {SMS_SUMMARY.periodDays} days:{" "}
-            <ExplainTerm text="Counted from your message log when Tether sends an SMS (failed sends excluded).">
+            <MetricTerm metric="Messages sent">
               <span className="font-medium text-foreground">{SMS_SUMMARY.sent} messages sent</span>
-            </ExplainTerm>
+            </MetricTerm>
             {" → "}
-            <ExplainTerm text="Outreach messages where the same client attended a class within 7 days after send — matched by timing against booking records, not link clicks.">
+            <MetricTerm metric="Clients rebooked">
               <span className="font-medium text-foreground">{SMS_SUMMARY.converted} rebooked ({SMS_SUMMARY.conversionRate}%)</span>
-            </ExplainTerm>
+            </MetricTerm>
             {" · "}
-            <ExplainTerm text="Total attended visits in that 7-day window after outreach messages.">
+            <MetricTerm metric="Visits recovered">
               <span className="font-medium text-foreground">{SMS_SUMMARY.visitsRecovered} visits recovered</span>
-            </ExplainTerm>
+            </MetricTerm>
           </p>
           <Link
             to="/analytics"

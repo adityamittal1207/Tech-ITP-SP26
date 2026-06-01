@@ -17,6 +17,7 @@ export function useHomePage() {
         studio: Studio;
         kpis: { label: string; value: number; delta: number; unit: string; invert?: boolean }[];
         todayClasses: { id: string; name: string; time: string; instructor: string; booked: number; capacity: number; waitlist: number }[];
+        todaySummary: { classCount: number; bookedSeats: number };
         actionItems: { id: string; title: string; subtitle: string; cta: string; route: string }[];
         activityFeed: { id: string; type: string; text: string; time: string }[];
         visitsTrend: { d: string; visits: number; noShows: number }[];

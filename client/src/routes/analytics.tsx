@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { ExplainTerm } from "@/components/ExplainTerm";
+import { MetricTerm } from "@/components/MetricTerm";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
 import { useAnalyticsPage } from "@/hooks/use-studio-data";
@@ -48,6 +49,9 @@ function AnalyticsPage() {
     instructors: INSTRUCTORS,
     revenueMix: REVENUE_MIX,
     revpashTrend: REVPASH_TREND,
+    currentRevpash,
+    revpashDeltaPct,
+    classDetails: CLASS_DETAILS,
     channelQuality: CHANNEL_QUALITY,
     smsConversion: SMS_CONVERSION,
   } = data as {
@@ -59,6 +63,14 @@ function AnalyticsPage() {
     instructors: { id: string; name: string; specialty: string; fillRate: number; retention: number; uniqueClients: number; classes30d: number }[];
     revenueMix: { name: string; value: number }[];
     revpashTrend: { wk: string; revpash: number }[];
+    currentRevpash: number;
+    revpashDeltaPct: number;
+    classDetails: Record<string, {
+      trend: { wk: string; attended: number; capacity: number; noShow: number }[];
+      topRegulars: { name: string; visits: number }[];
+      avgFillPct: number;
+      noShowRatePct: number;
+    }>;
     channelQuality: { channel: string; channelKey: string; count: number; retentionRate: number; avgVisits90d: number; milestoneRate: number; health: string }[];
     smsConversion: {
       periodDays: number;
@@ -73,7 +85,15 @@ function AnalyticsPage() {
   };
 
   const activeSelected = selectedClass || CLASS_TYPES[0]?.name || "";
+  const classDetail = CLASS_DETAILS[activeSelected] ?? {
+    trend: CLASS_TREND,
+    topRegulars: [],
+    avgFillPct: 0,
+    noShowRatePct: 0,
+  };
   const totalRev = REVENUE_MIX.reduce((s, r) => s + r.value, 0);
+  const revpashDeltaLabel =
+    revpashDeltaPct >= 0 ? `+${revpashDeltaPct}%` : `${revpashDeltaPct}%`;
 
   return (
       <div className="space-y-8">
@@ -84,10 +104,10 @@ function AnalyticsPage() {
           <SectionTitle
             title={
               <>
-                Schedule <ExplainTerm text="Fill rate is how full each class usually gets. 100 means every seat is taken, 50 means half the seats are filled.">fill rate</ExplainTerm>
+                Schedule <MetricTerm metric="Schedule fill rate">fill rate</MetricTerm>
               </>
             }
-            subtitle="Day-of-week × time slot · last 30 days"
+            subtitle="Day-of-week × time slot · last 30 days of booking data"
           />
         <div className="overflow-x-auto">
           <table className="border-separate border-spacing-1 mx-auto">
@@ -134,7 +154,7 @@ function AnalyticsPage() {
               subtitle={
                 <>
                   12-week attendance ·{" "}
-                  <ExplainTerm text="No-show rate is the share of bookings where clients did not attend. Lower is better.">
+                  <ExplainTerm text="No-show rate is the share of bookings where clients did not attend. Lower is better. Counted from attended flags on each booking.">
                     no-show rate
                   </ExplainTerm>{" "}
                   · top regulars
@@ -152,7 +172,7 @@ function AnalyticsPage() {
         <div className="grid lg:grid-cols-3 gap-5">
           <div className="lg:col-span-2 h-64">
             <ResponsiveContainer>
-              <LineChart data={CLASS_TREND} margin={{ left: -16, top: 8, right: 8, bottom: 0 }}>
+              <LineChart data={classDetail.trend} margin={{ left: -16, top: 8, right: 8, bottom: 0 }}>
                 <CartesianGrid stroke="var(--color-border)" vertical={false} />
                 <XAxis dataKey="wk" tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -166,34 +186,36 @@ function AnalyticsPage() {
           <div>
             <div className="text-xs font-medium text-muted-foreground mb-2">Top regulars · {activeSelected}</div>
             <div className="space-y-2">
-              {["Ella Park", "Ruby Mendes", "Liam Holloway", "Iris Quintero", "Theo Marsh"].map((n, i) => (
-                <div key={n} className="flex items-center justify-between rounded-lg border border-border p-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-xs font-semibold flex items-center justify-center">
-                      {n.split(" ").map((p) => p[0]).join("")}
+              {classDetail.topRegulars.length > 0 ? (
+                classDetail.topRegulars.map((r) => (
+                  <div key={r.name} className="flex items-center justify-between rounded-lg border border-border p-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-xs font-semibold flex items-center justify-center">
+                        {r.name.split(" ").map((p) => p[0]).join("")}
+                      </div>
+                      <div className="text-sm">{r.name}</div>
                     </div>
-                    <div className="text-sm">{n}</div>
+                    <div className="text-xs text-muted-foreground">{r.visits} visits</div>
                   </div>
-                  <div className="text-xs text-muted-foreground">{12 - i} visits</div>
+                ))
+              ) : (
+                <div className="text-xs text-muted-foreground rounded-lg border border-border p-3">
+                  No attended visits for this class in the last 12 weeks.
                 </div>
-              ))}
+              )}
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div className="rounded-lg border border-border p-3">
                 <div className="text-muted-foreground">
-                  <ExplainTerm text="Average fill is how full this class usually gets across recent sessions. 82% means about 4 out of 5 seats are taken.">
-                    Avg fill
-                  </ExplainTerm>
+                  <MetricTerm metric="Avg fill">Avg fill</MetricTerm>
                 </div>
-                <div className="font-display text-lg font-semibold">82%</div>
+                <div className="font-display text-lg font-semibold">{classDetail.avgFillPct}%</div>
               </div>
               <div className="rounded-lg border border-border p-3">
                 <div className="text-muted-foreground">
-                  <ExplainTerm text="No-show rate is the share of booked clients who did not attend. Lower is better for planning and revenue.">
-                    No-show
-                  </ExplainTerm>
+                  <MetricTerm metric="No-show">No-show</MetricTerm>
                 </div>
-                <div className="font-display text-lg font-semibold">6.4%</div>
+                <div className="font-display text-lg font-semibold">{classDetail.noShowRatePct}%</div>
               </div>
             </div>
           </div>
@@ -206,7 +228,7 @@ function AnalyticsPage() {
             title="Instructor scorecard"
             subtitle={
               <>
-                <ExplainTerm text="Fill rate shows how full this instructor's classes are on average.">
+                <ExplainTerm text="Fill rate shows how full this instructor's classes are on average — bookings divided by capacity over the last 30 days.">
                   Fill rate
                 </ExplainTerm>{" "}
                 ×{" "}
@@ -265,10 +287,7 @@ function AnalyticsPage() {
             <SectionTitle
               title={
                 <>
-                  <ExplainTerm text="Revenue mix shows where your money came from this month, like memberships, packs, or drop-ins.">
-                    Revenue mix
-                  </ExplainTerm>{" "}
-                  - this month
+                  <MetricTerm metric="Revenue mix">Revenue mix</MetricTerm> — this month
                 </>
               }
               subtitle={`Total $${totalRev.toLocaleString()}`}
@@ -289,15 +308,18 @@ function AnalyticsPage() {
           <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
             <SectionTitle
               title={
-                <ExplainTerm text="RevPASH is revenue efficiency: how much money each available class seat earns per hour. Higher means your schedule is generating more revenue for the same capacity.">
-                  RevPASH
-                </ExplainTerm>
+                <MetricTerm metric="RevPASH" />
               }
-              subtitle="Revenue per available seat-hour · unlimited revenue attributed to attended classes"
+              subtitle="Revenue per available seat-hour from attended visits and tier pricing"
             />
           <div className="flex items-baseline gap-3">
-            <div className="font-display text-3xl font-semibold">$12.40</div>
-            <div className="text-xs text-success font-medium">+8.2% vs prior</div>
+            <div className="font-display text-3xl font-semibold">${currentRevpash.toFixed(2)}</div>
+            <div className={cn(
+              "text-xs font-medium",
+              revpashDeltaPct >= 0 ? "text-success" : "text-destructive"
+            )}>
+              <MetricTerm metric="vs prior week">{revpashDeltaLabel}</MetricTerm>
+            </div>
           </div>
           <div className="h-44 mt-3">
             <ResponsiveContainer>
@@ -384,31 +406,29 @@ function AnalyticsPage() {
             subtitle={
               <>
                 Last {SMS_CONVERSION.periodDays} days ·{" "}
-                <ExplainTerm text="Every SMS is logged when sent. For outreach messages (at-risk, win-back, welcome), we check if that same client attended a class within 7 days after — no click or reply tracking, just timing against your booking records.">
-                  how rebookings are tracked
-                </ExplainTerm>
+                <MetricTerm metric="Clients rebooked">how rebookings are tracked</MetricTerm>
               </>
             }
           />
           <div className="grid grid-cols-3 gap-3 mb-5">
             <div className="rounded-lg border border-border p-3">
               <div className="text-xs text-muted-foreground">
-                <ExplainTerm text="Counted from your message log — every SMS Tether sends in the last 30 days, recorded at send time (failed sends are excluded).">Messages sent</ExplainTerm>
+                <MetricTerm metric="Messages sent" />
               </div>
               <div className="font-display text-2xl font-semibold mt-1">{SMS_CONVERSION.totals.sent}</div>
             </div>
             <div className="rounded-lg border border-border p-3">
               <div className="text-xs text-muted-foreground">
-                <ExplainTerm text="For each at-risk, win-back, or welcome SMS, we look up that client's attended bookings in the 7 days after it was sent. One attended visit = one rebooking. We don't know if the SMS caused it — only that the timing matches.">Clients rebooked</ExplainTerm>
+                <MetricTerm metric="Clients rebooked" />
               </div>
               <div className="font-display text-2xl font-semibold mt-1">{SMS_CONVERSION.totals.converted}</div>
               <div className="text-xs text-muted-foreground mt-0.5">
-                <ExplainTerm text="Outreach messages that led to at least one attended visit within 7 days, divided by all messages sent in the period.">Conversion rate</ExplainTerm>: {SMS_CONVERSION.totals.conversionRate}%
+                <MetricTerm metric="Conversion rate">Conversion rate</MetricTerm>: {SMS_CONVERSION.totals.conversionRate}%
               </div>
             </div>
             <div className="rounded-lg border border-border p-3">
               <div className="text-xs text-muted-foreground">
-                <ExplainTerm text="Total attended class visits in the 7-day window after an outreach message. One client coming twice counts as two visits recovered.">Visits recovered</ExplainTerm>
+                <MetricTerm metric="Visits recovered" />
               </div>
               <div className="font-display text-2xl font-semibold mt-1">{SMS_CONVERSION.totals.visitsRecovered}</div>
             </div>
@@ -419,16 +439,16 @@ function AnalyticsPage() {
                 <tr className="text-xs text-muted-foreground border-b border-border">
                   <th className="text-left font-medium py-2">Message type</th>
                   <th className="text-left font-medium py-2">
-                    <ExplainTerm text="Messages logged in the last 30 days for this template type.">Sent</ExplainTerm>
+                    <MetricTerm metric="Messages sent">Sent</MetricTerm>
                   </th>
                   <th className="text-left font-medium py-2">
-                    <ExplainTerm text="Messages where the recipient attended at least one class within 7 days after send (outreach types only).">Rebooked</ExplainTerm>
+                    <MetricTerm metric="Clients rebooked">Rebooked</MetricTerm>
                   </th>
                   <th className="text-left font-medium py-2">
-                    <ExplainTerm text="Rebooked messages divided by sent messages for this type.">Rate</ExplainTerm>
+                    <MetricTerm metric="Conversion rate">Rate</MetricTerm>
                   </th>
                   <th className="text-left font-medium py-2">
-                    <ExplainTerm text="Attended visits in the 7-day post-send window for this message type.">Visits recovered</ExplainTerm>
+                    <MetricTerm metric="Visits recovered" />
                   </th>
                 </tr>
               </thead>
@@ -447,19 +467,19 @@ function AnalyticsPage() {
           </div>
           <div className="rounded-lg border border-border p-4 text-sm">
             <div className="text-xs font-medium text-muted-foreground mb-2">
-              <ExplainTerm text="Tracked differently from outreach: we use the reminderSent flag on each booking (set when a class reminder goes out), not the message log. We compare no-show rates for reminded vs non-reminded bookings over the last 30 days.">Reminder impact</ExplainTerm>
+              <MetricTerm metric="Reminder impact" />
             </div>
             <div className="flex flex-wrap gap-6">
               <div>
                 <span className="text-muted-foreground">
-                  <ExplainTerm text="Bookings where reminderSent was true when the reminder SMS was triggered.">With reminder</ExplainTerm>:{" "}
+                  <MetricTerm text="Bookings where reminderSent was true when the reminder SMS was triggered.">With reminder</MetricTerm>:{" "}
                 </span>
                 <span className="font-medium">{SMS_CONVERSION.reminderImpact.withReminder.noShowRate}% no-show</span>
                 <span className="text-xs text-muted-foreground ml-1">({SMS_CONVERSION.reminderImpact.withReminder.bookings} bookings)</span>
               </div>
               <div>
                 <span className="text-muted-foreground">
-                  <ExplainTerm text="Bookings with no reminder SMS sent before the class.">Without reminder</ExplainTerm>:{" "}
+                  <MetricTerm text="Bookings with no reminder SMS sent before the class.">Without reminder</MetricTerm>:{" "}
                 </span>
                 <span className="font-medium">{SMS_CONVERSION.reminderImpact.withoutReminder.noShowRate}% no-show</span>
                 <span className="text-xs text-muted-foreground ml-1">({SMS_CONVERSION.reminderImpact.withoutReminder.bookings} bookings)</span>

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
+import { MetricTerm } from "@/components/MetricTerm";
 import { useImportCsv, type ImportSource, useUpdateSettings } from "@/hooks/use-studio-mutations";
 import { useSettingsPage } from "@/hooks/use-studio-data";
 import {
@@ -245,22 +246,28 @@ function SettingsPage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-        <SectionTitle title="Retention thresholds" subtitle="Applied by hourly scoring job" />
+        <SectionTitle
+          title={<MetricTerm metric="Retention thresholds" />}
+          subtitle="Applied by hourly scoring job — hover each status to see how it's calculated"
+        />
         <div className="grid md:grid-cols-3 gap-4">
           <Threshold
             label="New"
+            metric="New"
             desc={`Joined within last ${retention.newMemberDays} days`}
             value={`${retention.newMemberDays} days`}
             onAdjust={() => openAdjust("newMemberDays")}
           />
           <Threshold
             label="At-Risk"
+            metric="At-Risk"
             desc={`No booking in ${retention.daysUntilAtRisk + 1}–${retention.daysUntilLapsed} days`}
             value={`${retention.daysUntilAtRisk} days`}
             onAdjust={() => openAdjust("daysUntilAtRisk")}
           />
           <Threshold
             label="Lapsed"
+            metric="Lapsed"
             desc={`No booking in ${retention.daysUntilLapsed}+ days`}
             value={`${retention.daysUntilLapsed} days`}
             onAdjust={() => openAdjust("daysUntilLapsed")}
@@ -352,18 +359,22 @@ function Field({ icon: Icon, label, value, badge }: { icon: typeof Mail; label: 
 
 function Threshold({
   label,
+  metric,
   desc,
   value,
   onAdjust,
 }: {
   label: string;
+  metric: string;
   desc: string;
   value: string;
   onAdjust: () => void;
 }) {
   return (
     <div className="rounded-xl border border-border p-4">
-      <div className="text-sm font-medium">{label}</div>
+      <div className="text-sm font-medium">
+        <MetricTerm metric={metric}>{label}</MetricTerm>
+      </div>
       <div className="text-xs text-muted-foreground mt-1 mb-3 leading-relaxed">{desc}</div>
       <div className="flex items-center justify-between">
         <code className="text-xs bg-muted rounded px-2 py-1">{value}</code>

@@ -13,6 +13,13 @@ export const statusColor: Record<ClientStatus, string> = {
 
 export type Channel = "Instagram" | "Groupon" | "Referral" | "Walk-in";
 
+export type ClientMessage = {
+  id: string;
+  out: boolean;
+  body: string;
+  time: string;
+};
+
 export type Client = {
   id: string;
   name: string;
@@ -28,6 +35,8 @@ export type Client = {
   reason?: string;
   tags: string[];
   notes: string;
+  attendanceMonthly?: { m: string; visits: number }[];
+  recentMessages?: ClientMessage[];
 };
 
 export type Studio = {

@@ -8,8 +8,13 @@ import SyncLog from "../models/SyncLog.js";
 import { enrichMember, groupBookingsByMember } from "./memberStats.js";
 import { EXPORT_GUIDES } from "./importService.js";
 import {
+  attendanceByMonth,
   computeChannelQuality,
+  computeClassDetail,
+  computeCohortRetention,
+  computeHomeKpiDeltas,
   computeInstructorReturnRate,
+  computeRevPashTrend,
   computeSmsConversion,
   smsSummaryFromConversion,
 } from "./metricsService.js";
@@ -81,6 +86,11 @@ function formatTime(time24) {
   const suffix = h < 12 ? "AM" : "PM";
   const hour = ((h + 11) % 12) + 1;
   return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+function localDateKey(date = new Date()) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function relativeTime(date) {
@@ -210,41 +220,12 @@ export async function getStudioMeta(ownerUid) {
 
 export async function getHomePage(ownerUid) {
   const now = Date.now();
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = localDateKey();
   const todayDow = DAY_NAMES[new Date().getDay()];
   const { members, bookings, classes, messages, byMember } = await loadCoreData(ownerUid);
 
-  const activeMembers = members.filter((m) => m.isActive).length;
   const atRiskMembers = members.filter((m) => m.status === "at-risk");
-  const attendedCount = bookings.filter((b) => b.attended).length;
-  const attendanceRate = bookings.length
-    ? Math.round((attendedCount / bookings.length) * 100)
-    : 0;
-  const churnRate = members.length
-    ? Math.round((members.filter((m) => m.status === "lapsed").length / members.length) * 1000) / 10
-    : 0;
-  const mrr = members
-    .filter((m) => m.isActive && m.status !== "lapsed")
-    .reduce((sum, m) => sum + (TIER_MRR[m.membershipType] || 0), 0);
-
-  const kpis = [
-    { label: "Active Clients", value: activeMembers, delta: 4.2, unit: "" },
-    { label: "MRR", value: mrr, delta: 6.8, unit: "$" },
-    { label: "Fill Rate", value: attendanceRate, delta: 3.1, unit: "%" },
-    { label: "Churn Rate", value: churnRate, delta: -0.9, unit: "%", invert: true },
-    {
-      label: "4-Visit Conversion",
-      value: members.length
-        ? Math.round(
-            (members.filter((m) => (byMember[String(m._id)]?.length ?? 0) >= 4).length /
-              members.length) *
-              100
-          )
-        : 0,
-      delta: 5.4,
-      unit: "%",
-    },
-  ];
+  const kpis = computeHomeKpiDeltas(members, bookings, byMember);
 
   const dateMap = {};
   for (let i = 29; i >= 0; i--) {
@@ -269,7 +250,7 @@ export async function getHomePage(ownerUid) {
     const classBookings = bookings.filter(
       (b) =>
         String(b.classId?._id ?? b.classId) === String(c._id) &&
-        new Date(b.bookedAt).toISOString().slice(0, 10) === todayKey
+        localDateKey(b.bookedAt) === todayKey
     );
     const booked = classBookings.length;
     return {
@@ -352,23 +333,50 @@ export async function getHomePage(ownerUid) {
 
   const activityFeed = [...recentBookings, ...recentSignups, ...recentMessages].slice(0, 9);
 
+  const todayBookedSeats = todayClasses.reduce((s, c) => s + c.booked, 0);
+  const todaySummary = {
+    classCount: todayClasses.length,
+    bookedSeats: todayBookedSeats,
+  };
+
   return {
     studio: await getStudioMeta(ownerUid),
     kpis,
     visitsTrend,
     todayClasses,
+    todaySummary,
     actionItems,
     activityFeed,
   };
 }
 
 export async function getClientsPage(ownerUid) {
-  const { members, bookings, classIndex, byMember } = await loadCoreData(ownerUid);
+  const { members, bookings, classIndex, byMember, messages } = await loadCoreData(ownerUid);
+
+  const messagesByMember = {};
+  for (const msg of messages) {
+    const mid = String(msg.memberId?._id ?? msg.memberId);
+    if (!messagesByMember[mid]) messagesByMember[mid] = [];
+    messagesByMember[mid].push(msg);
+  }
 
   const clients = members.map((m) => {
     const memberBookings = byMember[String(m._id)] ?? [];
     const enriched = enrichMember(m, memberBookings);
-    return toClient(m, enriched, classIndex, memberBookings);
+    const base = toClient(m, enriched, classIndex, memberBookings);
+    const recentMessages = (messagesByMember[String(m._id)] ?? [])
+      .slice(0, 5)
+      .map((msg) => ({
+        id: String(msg._id),
+        out: true,
+        body: msg.body,
+        time: relativeTime(msg.sentAt),
+      }));
+    return {
+      ...base,
+      attendanceMonthly: attendanceByMonth(memberBookings),
+      recentMessages,
+    };
   });
 
   const counts = {
@@ -379,26 +387,7 @@ export async function getClientsPage(ownerUid) {
     "Win-back": clients.filter((c) => c.status === "Win-back").length,
   };
 
-  const cohortMap = {};
-  for (const m of members) {
-    const d = new Date(m.joinDate);
-    const key = d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }).replace(" ", " '");
-    if (!cohortMap[key]) cohortMap[key] = { size: 0, active: 0, monthDate: d };
-    cohortMap[key].size++;
-    if (m.status === "new" || m.status === "regular") cohortMap[key].active++;
-  }
-
-  const cohorts = Object.entries(cohortMap)
-    .sort((a, b) => a[1].monthDate - b[1].monthDate)
-    .slice(-12)
-    .map(([month, { size, active }]) => ({
-      month,
-      size,
-      m1: size > 0 ? Math.round((active / size) * 100) : 0,
-      m3: size > 0 ? Math.round((active / size) * 85) : null,
-      m6: size > 0 ? Math.round((active / size) * 70) : null,
-      m12: null,
-    }));
+  const cohorts = computeCohortRetention(members, bookings);
 
   return { clients, counts, cohorts };
 }
@@ -506,10 +495,17 @@ export async function getAnalyticsPage(ownerUid) {
     { name: "Drop-ins", value: Math.round(recentBookings.length * 22) },
   ].filter((r) => r.value > 0);
 
-  const revpashTrend = classTrend.map((w) => ({
-    wk: w.wk,
-    revpash: +(8 + w.attended * 0.05).toFixed(2),
-  }));
+  const { revpashTrend, currentRevpash, revpashDeltaPct } = computeRevPashTrend(
+    bookings,
+    classes,
+    members,
+    now
+  );
+
+  const classDetails = {};
+  for (const { name } of classTypes) {
+    classDetails[name] = computeClassDetail(name, bookings, classes, members);
+  }
 
   const channelQuality = computeChannelQuality(members, bookings, { milestoneVisits });
   const smsConversion = computeSmsConversion(messages, bookings);
@@ -520,9 +516,12 @@ export async function getAnalyticsPage(ownerUid) {
     scheduleHeatmap,
     classTypes,
     classTrend,
+    classDetails,
     instructors,
     revenueMix,
     revpashTrend,
+    currentRevpash,
+    revpashDeltaPct,
     channelQuality,
     smsConversion,
   };

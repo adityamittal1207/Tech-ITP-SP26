@@ -7,6 +7,7 @@
     "dev": "node --watch --import dotenv/config index.js",
     "start": "node --import dotenv/config index.js",
     "seed": "node --import dotenv/config seed.js",
+    "seed:firebase-tenants": "node --import dotenv/config scripts/seedFirebaseTenants.js",
     "purge-tenants": "node --import dotenv/config scripts/purgeOtherTenants.js",
     "test": "node --test tests/retentionService.test.js"
   },
