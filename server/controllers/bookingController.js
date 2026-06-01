@@ -1,6 +1,9 @@
 import Booking from "../models/Booking.js";
+import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import { computeStatus } from "../services/retentionService.js";
+import config from "../config/businessConfig.js";
+import { sendTemplate } from "../services/messageService.js";
 
 export async function getBookings(_req, res, next) {
   try {
@@ -28,14 +31,31 @@ export async function getBooking(req, res, next) {
 
 export async function createBooking(req, res, next) {
   try {
+    const { memberId, classId } = req.body;
+
+    const [member, cls] = await Promise.all([
+      Member.findById(memberId),
+      Class.findById(classId),
+    ]);
+    if (!member) return res.status(404).json({ message: "Member not found" });
+    if (!cls) return res.status(404).json({ message: "Class not found" });
+
     const booking = await Booking.create(req.body);
+
+    // Shared fetch — one DB round-trip used by both side effects below
+    let memberBookings;
     try {
-      const member = await Member.findById(booking.memberId);
-      if (member) {
-        const memberBookings = await Booking.find(
-          { memberId: booking.memberId },
-          { memberId: 1, bookedAt: 1 }
-        );
+      memberBookings = await Booking.find(
+        { memberId: booking.memberId },
+        { memberId: 1, bookedAt: 1 }
+      );
+    } catch (fetchErr) {
+      console.error("post-booking fetch failed (cron will reconcile):", fetchErr);
+    }
+
+    // Status sync — independent of milestone
+    try {
+      if (memberBookings) {
         await Member.findByIdAndUpdate(member._id, {
           $set: { status: computeStatus(member, memberBookings) },
         });
@@ -43,6 +63,20 @@ export async function createBooking(req, res, next) {
     } catch (syncErr) {
       console.error("post-booking status sync failed (cron will reconcile):", syncErr);
     }
+
+    // Milestone — independent of status sync; fires exactly once via flag guard.
+    // member.milestoneSent is read from the request-scoped object fetched during Gap-1 validation;
+    // a concurrent double-fire race is accepted as negligible at boutique-studio scale.
+    // The flag is set only after a successful send, so a failed send retries on the next booking.
+    try {
+      if (memberBookings && !member.milestoneSent && memberBookings.length >= config.milestoneVisits) {
+        await sendTemplate(member._id, "milestone", { visitCount: memberBookings.length });
+        await Member.findByIdAndUpdate(member._id, { $set: { milestoneSent: true } });
+      }
+    } catch (milestoneErr) {
+      console.error("milestone SMS failed:", milestoneErr);
+    }
+
     res.status(201).json(booking);
   } catch (error) {
     next(error);

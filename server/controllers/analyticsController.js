@@ -1,6 +1,7 @@
 import Booking from "../models/Booking.js";
 import Class from "../models/Class.js";
 import Member from "../models/Member.js";
+import config from "../config/businessConfig.js";
 
 function groupByMember(bookings) {
   const map = {};
@@ -156,6 +157,39 @@ export async function getClassStats(_req, res, next) {
       .sort((a, b) => b.avgFillRate - a.avgFillRate);
 
     res.json({ perClassAttendance, instructorScorecard });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getAcquisitionStats(_req, res, next) {
+  try {
+    const members = await Member.find();
+
+    // Pre-seed every channel at zero so all six always appear in the response
+    const sourceMap = {};
+    for (const src of config.sourceChannels) {
+      sourceMap[src] = { source: src, total: 0, statusBreakdown: { new: 0, regular: 0, "at-risk": 0, lapsed: 0 }, retained: 0 };
+    }
+
+    for (const m of members) {
+      const entry = sourceMap[m.source];
+      if (!entry) continue;
+      entry.total++;
+      entry.statusBreakdown[m.status] = (entry.statusBreakdown[m.status] || 0) + 1;
+      if (m.status === "new" || m.status === "regular") entry.retained++;
+    }
+
+    const bySource = Object.values(sourceMap)
+      .map(({ source, total, statusBreakdown, retained }) => ({
+        source,
+        total,
+        statusBreakdown,
+        retentionRate: total > 0 ? Math.round((retained / total) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({ bySource });
   } catch (error) {
     next(error);
   }
