@@ -59,7 +59,7 @@ export async function runReminderJob(ownerUidFilter) {
     const ownerUid = settings.ownerUid;
     const upcoming = await Booking.find({
       ownerUid,
-      status: { $in: ["booked", "confirmed"] },
+      status: { $in: ["booked"] },
       bookedAt: { $gt: new Date(now) },
     })
       .populate("memberId", "name phone")

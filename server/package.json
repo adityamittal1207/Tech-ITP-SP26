@@ -9,7 +9,7 @@
     "seed": "node --import dotenv/config seed.js",
     "seed:firebase-tenants": "node --import dotenv/config scripts/seedFirebaseTenants.js",
     "purge-tenants": "node --import dotenv/config scripts/purgeOtherTenants.js",
-    "test": "node --test tests/retentionService.test.js"
+    "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

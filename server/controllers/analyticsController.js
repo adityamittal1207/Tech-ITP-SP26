@@ -2,6 +2,7 @@ import Booking from "../models/Booking.js";
 import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import config from "../config/businessConfig.js";
+import { dateKeysForPastDays, localDateKey } from "../utils/studioTimezone.js";
 import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
 
 function groupByMember(bookings) {
@@ -34,13 +35,9 @@ export async function getDashboardStats(req, res, next) {
     // Bookings last 30 days — one slot per day
     const now = Date.now();
     const thirtyDaysAgo = now - 30 * 86_400_000;
-    const dateMap = {};
-    for (let i = 29; i >= 0; i--) {
-      const key = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
-      dateMap[key] = 0;
-    }
+    const dateMap = Object.fromEntries(dateKeysForPastDays(30).map((key) => [key, 0]));
     for (const b of bookings) {
-      const key = new Date(b.bookedAt).toISOString().slice(0, 10);
+      const key = localDateKey(b.bookedAt);
       if (key in dateMap) dateMap[key]++;
     }
     const bookingsLast30Days = Object.entries(dateMap).map(([date, count]) => ({ date, count }));

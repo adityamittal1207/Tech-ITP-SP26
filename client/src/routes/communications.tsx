@@ -5,6 +5,10 @@ import { PageHeader, SectionTitle } from "@/components/ui/page-header";
 import { PageError, PageLoader } from "@/components/PageState";
 import { useSendOutreach, useUpdateSettings } from "@/hooks/use-studio-mutations";
 import { useCommunicationsPage } from "@/hooks/use-studio-data";
+import {
+  fillOutreachTemplate,
+  toTemplateSendType,
+} from "@/lib/outreach-templates";
 import { cn } from "@/lib/utils";
 import { Send, MessageSquare, Bell, RotateCcw, Check, Pencil, Save, X } from "lucide-react";
 import { toast } from "sonner";
@@ -40,6 +44,15 @@ type QueueItem = {
 };
 
 const MERGE_TAGS = ["{firstName}", "{className}", "{classTime}", "{visitCount}"];
+const BOOKING_MERGE_TAGS = ["{firstName}", "{className}", "{classTime}", "{cancelLink}"];
+
+const BOOKING_CANCEL_TEMPLATE_KEYS = new Set(["reminder", "waitlistPromoted", "waitlistJoined"]);
+
+function mergeTagsForTemplate(key: string) {
+  if (BOOKING_CANCEL_TEMPLATE_KEYS.has(key)) return BOOKING_MERGE_TAGS;
+  if (key === "milestone") return [...MERGE_TAGS, "{visitCount}"];
+  return MERGE_TAGS;
+}
 
 function CommsPage() {
   const [tab, setTab] = useState<"reminders" | "outreach">("reminders");
@@ -182,21 +195,6 @@ function Reminders({
   );
 }
 
-function fillTemplate(body: string, client: QueueItem["client"]) {
-  const firstName = client.name.split(" ")[0] ?? "";
-  return body
-    .replaceAll("{firstName}", firstName)
-    .replaceAll("{favoriteInstructor}", client.favoriteInstructor ?? "your instructor")
-    .replaceAll("{lastClassDate}", `${client.daysSinceLast ?? 0} days ago`);
-}
-
-function toTemplateSendType(key: string): "atRisk" | "winback" | "welcome" | "milestone" | "reminder" {
-  if (key === "atRisk" || key === "winback" || key === "welcome" || key === "milestone" || key === "reminder") {
-    return key;
-  }
-  return "atRisk";
-}
-
 function Outreach({
   sendQueue,
   templates,
@@ -219,7 +217,7 @@ function Outreach({
   const selectedTemplate = current
     ? templates.find((t) => t.key === (selectedTemplates[current.id] ?? current.template.key))
     : null;
-  const templateBody = current && selectedTemplate ? fillTemplate(selectedTemplate.body, current.client) : "";
+  const templateBody = current && selectedTemplate ? fillOutreachTemplate(selectedTemplate.body, current.client) : "";
   const body = current ? (draftBodies[current.id] ?? templateBody) : "";
 
   const resetDraft = () => {
@@ -441,7 +439,7 @@ function TemplateLibrary({ templates }: { templates: TemplateItem[] }) {
                   className="w-full min-h-[100px] rounded-lg border border-border bg-background p-3 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
                 <p className="text-xs text-muted-foreground mt-2">
-                  Tags: {MERGE_TAGS.map((tag) => (
+                  Tags: {mergeTagsForTemplate(t.key).map((tag) => (
                     <code key={tag} className="bg-muted px-1 py-0.5 rounded mr-1">{tag}</code>
                   ))}
                 </p>

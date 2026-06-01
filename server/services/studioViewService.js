@@ -5,14 +5,31 @@ import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import Message from "../models/Message.js";
 import SyncLog from "../models/SyncLog.js";
-import { enrichMember, groupBookingsByMember, isPastBooking } from "./memberStats.js";
+import {
+  applyBookingToVisitTrend,
+  classifyBookingForVisitTrend,
+  enrichMember,
+  groupBookingsByMember,
+  isPastBooking,
+} from "./memberStats.js";
 import { EXPORT_GUIDES } from "./importService.js";
+import {
+  addDaysToDateKey,
+  dateKeysForPastDays,
+  formatStudioDate,
+  formatStudioDateTime,
+  formatStudioTime,
+  localDateKey,
+  studioDayName,
+} from "../utils/studioTimezone.js";
+import { parseTime24 } from "./bookingService.js";
 import {
   attendanceByMonth,
   computeChannelQuality,
   computeClassDetail,
   computeCohortRetention,
   computeHomeKpiDeltas,
+  computeInstructorFillRates,
   computeInstructorReturnRate,
   computeRevPashTrend,
   computeSmsConversion,
@@ -49,6 +66,9 @@ const CLASS_COLORS = [
 
 const TEMPLATE_CATALOG = [
   { key: "reminder", name: "Class reminder", category: "Reminders" },
+  { key: "waitlistJoined", name: "Waitlist confirmation", category: "Reminders" },
+  { key: "waitlistPromoted", name: "Waitlist spot opened", category: "Reminders" },
+  { key: "cancelAck", name: "Cancellation notice", category: "Reminders" },
   { key: "atRisk", name: "At-risk check-in", category: "Retention" },
   { key: "winback", name: "Win-back", category: "Win-back" },
   { key: "milestone", name: "Visit milestone", category: "Lifecycle" },
@@ -61,6 +81,9 @@ const MESSAGE_TYPE_LABELS = {
   winback: "Win-back",
   welcome: "Welcome",
   milestone: "Milestone",
+  waitlistPromoted: "Waitlist promoted",
+  waitlistJoined: "Waitlist joined",
+  cancelAck: "Cancellation",
 };
 
 function buildTemplateLibrary(smsTemplates) {
@@ -88,10 +111,18 @@ function formatTime(time24) {
   return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
 }
 
-function localDateKey(date = new Date()) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const FILLED_BOOKING_STATUSES = ["booked", "confirmed"];
+
+function minutesFromTime24(time24) {
+  const { hours, minutes } = parseTime24(time24);
+  return hours * 60 + minutes;
 }
+
+function isUnderBookedToday({ booked, capacity }) {
+  return capacity > 0 && booked > 0 && booked / capacity < 0.5;
+}
+
+const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 function relativeTime(date) {
   const diffMs = Date.now() - new Date(date).getTime();
@@ -103,16 +134,109 @@ function relativeTime(date) {
   return days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
+function withinActivityWindow(at, now = Date.now()) {
+  return now - new Date(at).getTime() <= ACTIVITY_WINDOW_MS;
+}
+
+function bookingActivityEvents(booking, now = Date.now()) {
+  const memberName = booking.memberId?.name ?? "Member";
+  const className = booking.classId?.name ?? "a class";
+  const createdAt = booking.createdAt ?? booking.bookedAt;
+
+  if (booking.status === "cancelled") {
+    const at = booking.cancelledAt ?? booking.updatedAt ?? createdAt;
+    if (!withinActivityWindow(at, now)) return [];
+    return [{
+      id: `${booking._id}-cancel`,
+      type: "cancel",
+      text: `${memberName} cancelled ${className}`,
+      at: new Date(at).getTime(),
+      time: relativeTime(at),
+    }];
+  }
+
+  const visitKind = classifyBookingForVisitTrend(booking, now);
+  if (visitKind === "noShow") {
+    const at = booking.bookedAt;
+    if (!withinActivityWindow(at, now)) return [];
+    return [{
+      id: `${booking._id}-miss`,
+      type: "cancel",
+      text: `${memberName} missed ${className}`,
+      at: new Date(at).getTime(),
+      time: relativeTime(at),
+    }];
+  }
+
+  if (!withinActivityWindow(createdAt, now)) return [];
+
+  if (booking.status === "waitlisted") {
+    return [{
+      id: String(booking._id),
+      type: "booking",
+      text: `${memberName} joined waitlist for ${className}`,
+      at: new Date(createdAt).getTime(),
+      time: relativeTime(createdAt),
+    }];
+  }
+
+  return [{
+    id: String(booking._id),
+    type: "booking",
+    text: `${memberName} booked ${className}`,
+    at: new Date(createdAt).getTime(),
+    time: relativeTime(createdAt),
+  }];
+}
+
+export function buildActivityFeed({ bookings, members, messages, now = Date.now() }) {
+  const bookingEvents = bookings.flatMap((b) => bookingActivityEvents(b, now));
+
+  const signupEvents = members
+    .filter((m) => withinActivityWindow(m.joinDate, now))
+    .map((m) => ({
+      id: String(m._id),
+      type: "signup",
+      text: `New signup: ${m.name}${m.joinSource ? ` — ${m.joinSource}` : ""}`,
+      at: new Date(m.joinDate).getTime(),
+      time: relativeTime(m.joinDate),
+    }));
+
+  const messageEvents = messages
+    .filter((m) => withinActivityWindow(m.sentAt, now))
+    .map((m) => {
+      if (m.direction === "inbound") {
+        const action = m.replyKeyword === "cancel" ? "cancelled" : "replied";
+        return {
+          id: String(m._id),
+          type: "reply",
+          text: `${m.memberId?.name ?? "Member"} ${action} via SMS`,
+          at: new Date(m.sentAt).getTime(),
+          time: relativeTime(m.sentAt),
+        };
+      }
+      return {
+        id: String(m._id),
+        type: "reply",
+        text: `${m.type} SMS to ${m.memberId?.name ?? "member"}`,
+        at: new Date(m.sentAt).getTime(),
+        time: relativeTime(m.sentAt),
+      };
+    });
+
+  return [...bookingEvents, ...signupEvents, ...messageEvents]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 9)
+    .map(({ at: _at, ...item }) => item);
+}
+
 function formatSentAt(date) {
-  const d = new Date(date);
-  const today = new Date();
-  const isToday = d.toDateString() === today.toDateString();
-  const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-  if (isToday) return `Today ${time}`;
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-US", { weekday: "short" });
+  const todayKey = localDateKey();
+  const dKey = localDateKey(date);
+  const time = formatStudioTime(date, { hour: "numeric", minute: "2-digit" });
+  if (dKey === todayKey) return `Today ${time}`;
+  if (dKey === addDaysToDateKey(todayKey, -1)) return "Yesterday";
+  return formatStudioDate(date, { weekday: "short" });
 }
 
 function timeToSlot(time24) {
@@ -221,23 +345,18 @@ export async function getStudioMeta(ownerUid) {
 export async function getHomePage(ownerUid) {
   const now = Date.now();
   const todayKey = localDateKey();
-  const todayDow = DAY_NAMES[new Date().getDay()];
-  const { members, bookings, classes, messages, byMember } = await loadCoreData(ownerUid);
+  const todayDow = studioDayName();
+  const [{ members, bookings, classes, messages, byMember }, lastImport] = await Promise.all([
+    loadCoreData(ownerUid),
+    SyncLog.findOne({ ownerUid, type: "csv_import" }).sort({ ranAt: -1 }),
+  ]);
 
   const atRiskMembers = members.filter((m) => m.status === "at-risk");
   const kpis = computeHomeKpiDeltas(members, bookings, byMember);
 
-  const dateMap = {};
-  for (let i = 29; i >= 0; i--) {
-    const key = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
-    dateMap[key] = { visits: 0, noShows: 0 };
-  }
+  const dateMap = Object.fromEntries(dateKeysForPastDays(30).map((key) => [key, { visits: 0, noShows: 0 }]));
   for (const b of bookings) {
-    const key = new Date(b.bookedAt).toISOString().slice(0, 10);
-    if (key in dateMap) {
-      if (b.attended) dateMap[key].visits++;
-      else dateMap[key].noShows++;
-    }
+    applyBookingToVisitTrend(dateMap, b, now);
   }
   const visitsTrend = Object.entries(dateMap).map(([_, counts], i) => ({
     d: `D${i + 1}`,
@@ -245,7 +364,9 @@ export async function getHomePage(ownerUid) {
     noShows: counts.noShows,
   }));
 
-  const todayClassesRaw = classes.filter((c) => c.dayOfWeek === todayDow);
+  const todayClassesRaw = classes
+    .filter((c) => c.dayOfWeek === todayDow)
+    .sort((a, b) => minutesFromTime24(a.time) - minutesFromTime24(b.time));
   const todayClasses = todayClassesRaw.map((c) => {
     const classBookings = bookings.filter(
       (b) =>
@@ -253,11 +374,12 @@ export async function getHomePage(ownerUid) {
         localDateKey(b.bookedAt) === todayKey &&
         b.status !== "cancelled"
     );
-    const booked = classBookings.filter((b) => ["booked", "confirmed"].includes(b.status)).length;
+    const booked = classBookings.filter((b) => FILLED_BOOKING_STATUSES.includes(b.status)).length;
     const waitlisted = classBookings.filter((b) => b.status === "waitlisted").length;
     return {
       id: String(c._id),
       name: c.name,
+      time24: c.time,
       time: formatTime(c.time),
       instructor: c.instructor,
       booked,
@@ -266,30 +388,43 @@ export async function getHomePage(ownerUid) {
     };
   });
 
-  const underBooked = todayClasses.filter((c) => c.capacity > 0 && c.booked / c.capacity < 0.5);
+  const underBooked = todayClasses.filter(isUnderBookedToday);
+  const waitlistedClasses = todayClasses.filter((c) => c.waitlist > 0);
+  const waitlistTotal = waitlistedClasses.reduce((sum, c) => sum + c.waitlist, 0);
   const newMembers = members.filter((m) => m.status === "new");
 
   const actionItems = [
-    {
-      id: "a1",
-      title: `${atRiskMembers.length} at-risk clients need outreach this week`,
-      subtitle: "Sorted by engagement — highest value first",
-      cta: "Open at-risk list",
-      route: "/clients",
-    },
+    ...(atRiskMembers.length > 0
+      ? [{
+          id: "a1",
+          title: `${atRiskMembers.length} at-risk client${atRiskMembers.length === 1 ? "" : "s"} need outreach this week`,
+          subtitle: "Sorted by engagement — highest value first",
+          cta: "Open at-risk list",
+          route: "/clients",
+        }]
+      : []),
     ...(underBooked.length
       ? [{
           id: "a2",
-          title: `${underBooked.length} classes under 50% full today`,
-          subtitle: underBooked.map((c) => c.name).join(", "),
+          title: `${underBooked.length} class${underBooked.length === 1 ? "" : "es"} under 50% full today`,
+          subtitle: underBooked.map((c) => `${c.name} (${c.time})`).join(" · "),
           cta: "View schedule",
           route: "/schedule",
         }]
       : []),
-    ...(newMembers.length
+    ...(waitlistTotal > 0
+      ? [{
+          id: "a-waitlist",
+          title: `${waitlistTotal} client${waitlistTotal === 1 ? "" : "s"} on waitlists today`,
+          subtitle: waitlistedClasses.map((c) => `${c.name} (+${c.waitlist})`).join(" · "),
+          cta: "Manage waitlists",
+          route: "/schedule",
+        }]
+      : []),
+    ...(newMembers.length > 0
       ? [{
           id: "a3",
-          title: `${newMembers.length} new members joined recently`,
+          title: `${newMembers.length} new member${newMembers.length === 1 ? "" : "s"} joined recently`,
           subtitle: "Review welcome messages and first bookings",
           cta: "Review queue",
           route: "/communications",
@@ -298,58 +433,15 @@ export async function getHomePage(ownerUid) {
     {
       id: "a4",
       title: "Import booking data via CSV",
-      subtitle: "Upload members, classes, and bookings from your booking system",
+      subtitle: lastImport
+        ? `Last import: ${formatStudioDateTime(lastImport.ranAt)}`
+        : "Never imported — upload members, classes, and bookings from your booking system",
       cta: "Open settings",
       route: "/settings",
     },
   ];
 
-  const recentBookings = [...bookings]
-    .sort((a, b) => new Date(b.bookedAt) - new Date(a.bookedAt))
-    .slice(0, 6)
-    .map((b) => ({
-      id: String(b._id),
-      type: b.attended ? "booking" : "cancel",
-      text: b.attended
-        ? `${b.memberId?.name ?? "Member"} booked ${b.classId?.name ?? "a class"}`
-        : `${b.memberId?.name ?? "Member"} missed ${b.classId?.name ?? "a class"}`,
-      time: relativeTime(b.bookedAt),
-    }));
-
-  const recentSignups = members
-    .filter((m) => (now - new Date(m.joinDate).getTime()) / 86_400_000 <= 7)
-    .slice(0, 3)
-    .map((m) => ({
-      id: String(m._id),
-      type: "signup",
-      text: `New signup: ${m.name}${m.joinSource ? ` — ${m.joinSource}` : ""}`,
-      time: relativeTime(m.joinDate),
-    }));
-
-  const recentMessages = messages.slice(0, 6).map((m) => {
-    if (m.direction === "inbound") {
-      const action =
-        m.replyKeyword === "confirm"
-          ? "confirmed"
-          : m.replyKeyword === "cancel"
-            ? "cancelled"
-            : "replied";
-      return {
-        id: String(m._id),
-        type: "reply",
-        text: `${m.memberId?.name ?? "Member"} ${action} via SMS`,
-        time: relativeTime(m.sentAt),
-      };
-    }
-    return {
-      id: String(m._id),
-      type: "sms",
-      text: `${m.type} SMS to ${m.memberId?.name ?? "member"}`,
-      time: relativeTime(m.sentAt),
-    };
-  });
-
-  const activityFeed = [...recentBookings, ...recentSignups, ...recentMessages].slice(0, 9);
+  const activityFeed = buildActivityFeed({ bookings, members, messages, now });
 
   const todayBookedSeats = todayClasses.reduce((s, c) => s + c.booked, 0);
   const todaySummary = {
@@ -370,6 +462,7 @@ export async function getHomePage(ownerUid) {
 
 export async function getClientsPage(ownerUid) {
   const { members, bookings, classIndex, byMember, messages } = await loadCoreData(ownerUid);
+  const { smsTemplates } = await getEffectiveConfig(ownerUid);
 
   const messagesByMember = {};
   for (const msg of messages) {
@@ -383,12 +476,13 @@ export async function getClientsPage(ownerUid) {
     const enriched = enrichMember(m, memberBookings);
     const base = toClient(m, enriched, classIndex, memberBookings);
     const recentMessages = (messagesByMember[String(m._id)] ?? [])
-      .slice(0, 5)
+      .slice()
+      .sort((a, b) => new Date(a.sentAt) - new Date(b.sentAt))
       .map((msg) => ({
         id: String(msg._id),
-        out: true,
+        out: msg.direction !== "inbound",
         body: msg.body,
-        time: relativeTime(msg.sentAt),
+        time: formatSentAt(msg.sentAt),
       }));
     return {
       ...base,
@@ -407,7 +501,7 @@ export async function getClientsPage(ownerUid) {
 
   const cohorts = computeCohortRetention(members, bookings);
 
-  return { clients, counts, cohorts };
+  return { clients, counts, cohorts, templates: buildTemplateLibrary(smsTemplates) };
 }
 
 export async function getAnalyticsPage(ownerUid) {
@@ -466,39 +560,35 @@ export async function getAnalyticsPage(ownerUid) {
       const t = new Date(b.bookedAt).getTime();
       return t >= weekStart && t < weekEnd;
     });
+    let attended = 0;
+    let noShow = 0;
+    for (const b of weekBookings) {
+      const kind = classifyBookingForVisitTrend(b, now);
+      if (kind === "visit") attended++;
+      else if (kind === "noShow") noShow++;
+    }
     return {
       wk: `W${i + 1}`,
-      attended: weekBookings.filter((b) => b.attended).length,
+      attended,
       capacity: classes.reduce((s, c) => s + c.capacity, 0),
-      noShow: weekBookings.filter((b) => !b.attended).length,
+      noShow,
     };
   });
 
-  const instructorMap = {};
-  for (const c of classes) {
-    if (!instructorMap[c.instructor]) {
-      instructorMap[c.instructor] = { specialty: c.category, fillRate: 0, retention: 0, classes30d: 0, totalFill: 0, count: 0 };
-    }
-    const inst = instructorMap[c.instructor];
-    const classBookings = recentBookings.filter(
-      (b) => String(b.classId?._id ?? b.classId) === String(c._id)
-    );
-    inst.classes30d++;
-    inst.count++;
-    inst.totalFill += c.capacity > 0 ? classBookings.length / c.capacity : 0;
-  }
-
+  const fillRates = computeInstructorFillRates(bookings, classes);
   const returnRates = computeInstructorReturnRate(bookings, classes);
-  const instructors = Object.entries(instructorMap).map(([name, s], i) => {
+  const instructorNames = [...new Set([...Object.keys(fillRates), ...Object.keys(returnRates)])];
+  const instructors = instructorNames.map((name, i) => {
+    const fill = fillRates[name] ?? { specialty: "", fillRate: 0, classes30d: 0 };
     const stats = returnRates[name] ?? { returnRate: 0, uniqueClients: 0 };
     return {
       id: `i${i + 1}`,
       name,
-      specialty: s.specialty,
-      fillRate: s.count > 0 ? Math.round((s.totalFill / s.count) * 100) / 100 : 0,
+      specialty: fill.specialty,
+      fillRate: fill.fillRate,
       retention: stats.returnRate,
       uniqueClients: stats.uniqueClients,
-      classes30d: s.classes30d,
+      classes30d: fill.classes30d,
     };
   });
 
@@ -556,8 +646,8 @@ export async function getCommunicationsPage(ownerUid) {
   });
 
   const reminderRules = [
-    { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Reply C to cancel · Y to confirm" },
-    { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Reply C to cancel" },
+    { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Cancel link in SMS" },
+    { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Cancel link in SMS" },
     { id: "r3", name: "At-risk outreach", trigger: `${retention.daysUntilAtRisk}+ days inactive`, enabled: true, replies: "Automated via retention scoring" },
     { id: "r4", name: "Win-back outreach", trigger: `${retention.daysUntilLapsed}+ days lapsed`, enabled: true, replies: "Manual or scheduled send" },
   ];
@@ -630,11 +720,12 @@ export async function getSettingsPage(ownerUid) {
       replyToEmail: config.replyToEmail,
     },
     retention: config.retention,
+    reminderTiming: config.reminderTiming,
     membershipTiers: config.membershipTiers,
     smsTemplates: config.smsTemplates,
     reminderRules: [
-      { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Reply C to cancel · Y to confirm" },
-      { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Reply C to cancel" },
+      { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Cancel link in SMS" },
+      { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Cancel link in SMS" },
       { id: "r3", name: "At-risk outreach", trigger: `${config.retention.daysUntilAtRisk}+ days inactive`, enabled: true, replies: "Automated via retention scoring" },
       { id: "r4", name: "Win-back outreach", trigger: `${config.retention.daysUntilLapsed}+ days lapsed`, enabled: true, replies: "Manual or scheduled send" },
     ],

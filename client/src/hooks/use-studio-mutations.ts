@@ -99,15 +99,20 @@ export function useCreateBooking() {
 export function useCancelBooking() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiRequest(`/bookings/${id}/cancel`, { method: "POST" }),
+    mutationFn: ({ id, message }: { id: string; message?: string }) =>
+      apiRequest(`/bookings/${id}/cancel`, {
+        method: "POST",
+        body: JSON.stringify(message ? { message } : {}),
+      }),
     onSuccess: () => invalidateBookingQueries(queryClient),
   });
 }
 
-export function useConfirmBooking() {
+export function usePromoteFromWaitlist() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => apiRequest(`/bookings/${id}/confirm`, { method: "POST" }),
+    mutationFn: (id: string) =>
+      apiRequest(`/bookings/${id}/promote`, { method: "POST" }),
     onSuccess: () => invalidateBookingQueries(queryClient),
   });
 }
@@ -138,6 +143,22 @@ export function useCreateClass() {
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       apiRequest("/classes", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useUpdateClass() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      capacity?: number;
+      occurrenceDate?: string;
+    }) =>
+      apiRequest(`/classes/${id}`, { method: "PUT", body: JSON.stringify(body) }),
     onSuccess: () => invalidateBookingQueries(queryClient),
   });
 }

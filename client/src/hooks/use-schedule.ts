@@ -46,6 +46,7 @@ export function useRoster(classId: string | null, date: string | null) {
           status: string;
           attended: boolean;
           reminderSent: boolean;
+          cancelLink: string | null;
           member: { id: string; name: string; email: string; phone: string; status: string } | null;
         }[];
       }>(`/schedule/${classId}/roster?date=${date}`),

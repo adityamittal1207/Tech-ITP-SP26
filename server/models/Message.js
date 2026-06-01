@@ -23,7 +23,7 @@ const messageSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["reminder", "atRisk", "winback", "welcome", "milestone", "confirmAck", "cancelAck"],
+      enum: ["reminder", "atRisk", "winback", "welcome", "milestone", "confirmAck", "cancelAck", "waitlistPromoted", "waitlistJoined"],
       required: [true, "Type is required"],
     },
     templateUsed: {

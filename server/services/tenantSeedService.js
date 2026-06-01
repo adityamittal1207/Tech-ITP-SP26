@@ -11,6 +11,7 @@ import {
   generateOperationalSeed,
 } from "../data/operationalSeed.js";
 import businessConfig from "../config/businessConfig.js";
+import { localDateKey, studioDayName } from "../utils/studioTimezone.js";
 import { getEffectiveConfig } from "./configService.js";
 import { runRetentionScoring } from "./scoringJob.js";
 import { seedDefaultSettings } from "./configService.js";
@@ -74,13 +75,23 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
     })),
   );
 
-  const seenBookingKeys = new Set();
-  const allSpecs = [
+  const todayKey = localDateKey();
+  const todayDow = studioDayName();
+  const todayClassIdxSet = new Set(
+    classes.map((c, i) => (c.dayOfWeek === todayDow ? i : -1)).filter((i) => i >= 0),
+  );
+  const isTodayOccurrence = (b) =>
+    todayClassIdxSet.has(b.classIdx) && localDateKey(b.bookedAt) === todayKey;
+
+  const todaySpecs = buildTodayBookings(memberProfiles, classes);
+  const historicalSpecs = [
     ...buildBookings(memberProfiles, classes),
     ...buildSupplementalBookings(memberProfiles, classes),
-    ...buildTodayBookings(memberProfiles, classes),
     ...buildTomorrowBookings(memberProfiles, classes),
-  ];
+  ].filter((b) => !isTodayOccurrence(b));
+
+  const seenBookingKeys = new Set();
+  const allSpecs = [...historicalSpecs, ...todaySpecs];
   const bookingSpecs = allSpecs.filter((b) => {
     const key = `${b.memberIdx}:${b.classIdx}:${b.bookedAt.getTime()}`;
     if (seenBookingKeys.has(key)) return false;
@@ -106,7 +117,6 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
       attended: b.attended ?? false,
       reminderSent,
       reminderSentAt: reminderSent ? new Date(bookedAt.getTime() - 24 * 3_600_000) : undefined,
-      confirmedAt: status === "confirmed" ? new Date() : b.confirmedAt,
     };
   });
   const insertedBookings = await Booking.insertMany(bookingDocs);
@@ -145,7 +155,7 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
         classId: classes[i % classes.length]._id,
         bookedAt: daysAgo(Math.max(1, sentDaysAgo - 2)),
         attended: true,
-        status: "confirmed",
+        status: "booked",
         source: "staff",
         externalSource: "native",
         reminderSent: false,
@@ -179,20 +189,6 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
       status: "sent",
       direction: "outbound",
     });
-    if (booking.status === "confirmed") {
-      messageDocs.push({
-        ownerUid,
-        memberId: member._id,
-        bookingId: booking._id,
-        type: "reminder",
-        templateUsed: null,
-        body: "Y",
-        sentAt: new Date(sentAt.getTime() + 360_000),
-        status: "received",
-        direction: "inbound",
-        replyKeyword: "confirm",
-      });
-    }
   }
 
   if (messageDocs.length > 0) await Message.insertMany(messageDocs);

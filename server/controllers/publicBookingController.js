@@ -1,5 +1,4 @@
 import Member from "../models/Member.js";
-import StudioSettings from "../models/StudioSettings.js";
 import {
   cancelBooking,
   createBooking,
@@ -9,6 +8,7 @@ import {
   localDateKey,
 } from "../services/bookingService.js";
 import { normalizePhone } from "../services/phone.js";
+import { placeholderEmailForPhone } from "../utils/memberEmail.js";
 import Booking from "../models/Booking.js";
 
 async function resolveStudio(slug) {
@@ -17,6 +17,17 @@ async function resolveStudio(slug) {
     throw Object.assign(new Error("Studio not found or public booking disabled"), { status: 404 });
   }
   return studio;
+}
+
+async function findMemberByPhone(ownerUid, phoneRaw) {
+  let normalizedPhone;
+  try {
+    normalizedPhone = normalizePhone(phoneRaw.trim());
+  } catch {
+    throw Object.assign(new Error("Invalid phone number"), { status: 400 });
+  }
+  const member = await Member.findOne({ ownerUid, phone: normalizedPhone });
+  return { member, normalizedPhone };
 }
 
 export async function getPublicStudio(req, res, next) {
@@ -47,10 +58,10 @@ export async function getPublicSchedule(req, res, next) {
 export async function getPublicBookings(req, res, next) {
   try {
     const studio = await resolveStudio(req.params.slug);
-    const email = req.query.email?.trim().toLowerCase();
-    if (!email) return res.status(400).json({ message: "email query required" });
+    const phone = req.query.phone?.trim();
+    if (!phone) return res.status(400).json({ message: "phone query required" });
 
-    const member = await Member.findOne({ ownerUid: studio.ownerUid, email });
+    const { member } = await findMemberByPhone(studio.ownerUid, phone);
     if (!member) return res.json({ bookings: [] });
 
     const bookings = await Booking.find({
@@ -80,24 +91,18 @@ export async function getPublicBookings(req, res, next) {
 export async function createPublicBooking(req, res, next) {
   try {
     const studio = await resolveStudio(req.params.slug);
-    const { email, name, phone, classId, date } = req.body;
-    if (!email?.trim() || !classId || !date) {
-      return res.status(400).json({ message: "email, classId, and date are required" });
+    const { name, phone, classId, date, email } = req.body;
+    if (!name?.trim() || !phone?.trim() || !classId || !date) {
+      return res.status(400).json({ message: "name, phone, classId, and date are required" });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    let member = await Member.findOne({ ownerUid: studio.ownerUid, email: normalizedEmail });
+    const { member: existing, normalizedPhone } = await findMemberByPhone(studio.ownerUid, phone);
+    let member = existing;
 
     if (!member) {
-      if (!name?.trim() || !phone?.trim()) {
-        return res.status(400).json({ message: "name and phone required for new members" });
-      }
-      let normalizedPhone;
-      try {
-        normalizedPhone = normalizePhone(phone.trim());
-      } catch {
-        return res.status(400).json({ message: "Invalid phone number" });
-      }
+      const normalizedEmail = email?.trim()
+        ? email.trim().toLowerCase()
+        : placeholderEmailForPhone(normalizedPhone);
       member = await Member.create({
         ownerUid: studio.ownerUid,
         name: name.trim(),
@@ -107,6 +112,9 @@ export async function createPublicBooking(req, res, next) {
         source: "native",
         joinSource: "Walk-in",
       });
+    } else if (name.trim() && member.name !== name.trim()) {
+      member.name = name.trim();
+      await member.save();
     }
 
     const booking = await createBooking({
@@ -134,14 +142,11 @@ export async function createPublicBooking(req, res, next) {
 export async function cancelPublicBooking(req, res, next) {
   try {
     const studio = await resolveStudio(req.params.slug);
-    const { email } = req.body;
+    const { phone } = req.body;
     const { id } = req.params;
-    if (!email?.trim()) return res.status(400).json({ message: "email is required" });
+    if (!phone?.trim()) return res.status(400).json({ message: "phone is required" });
 
-    const member = await Member.findOne({
-      ownerUid: studio.ownerUid,
-      email: email.trim().toLowerCase(),
-    });
+    const { member } = await findMemberByPhone(studio.ownerUid, phone);
     if (!member) return res.status(404).json({ message: "Booking not found" });
 
     const booking = await Booking.findOne({

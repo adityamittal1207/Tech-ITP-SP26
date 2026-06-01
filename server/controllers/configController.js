@@ -19,14 +19,14 @@ export function getConfig(_req, res) {
         name: "24-hour SMS reminder",
         trigger: "24h before class",
         enabled: true,
-        replies: "Reply C to cancel · Y to confirm",
+        replies: "Cancel link in SMS",
       },
       {
         id: "r2",
         name: "2-hour SMS reminder",
         trigger: "2h before class",
         enabled: true,
-        replies: "Reply C to cancel",
+        replies: "Cancel link in SMS",
       },
       {
         id: "r3",

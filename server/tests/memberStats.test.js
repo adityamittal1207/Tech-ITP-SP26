@@ -1,11 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyBookingToVisitTrend,
   bookingMemberId,
+  classifyBookingForVisitTrend,
   enrichMember,
   getLastVisitMs,
   groupBookingsByMember,
 } from "../services/memberStats.js";
+import { dateKeysForPastDays } from "../utils/studioTimezone.js";
 
 const MEMBER_ID = "507f1f77bcf86cd799439011";
 const NOW = new Date("2026-06-01T18:00:00Z").getTime();
@@ -53,6 +56,69 @@ describe("getLastVisitMs", () => {
       NOW
     );
     assert.equal(ms, new Date("2026-06-01T20:00:00Z").getTime());
+  });
+});
+
+describe("classifyBookingForVisitTrend", () => {
+  it("skips future sessions on the same day", () => {
+    assert.equal(
+      classifyBookingForVisitTrend(
+        {
+          bookedAt: new Date("2026-06-01T20:00:00Z"),
+          attended: false,
+          status: "confirmed",
+        },
+        NOW
+      ),
+      null
+    );
+  });
+
+  it("counts past unmarked sessions as no-shows", () => {
+    assert.equal(
+      classifyBookingForVisitTrend(
+        {
+          bookedAt: new Date("2026-06-01T09:00:00Z"),
+          attended: false,
+          status: "confirmed",
+        },
+        NOW
+      ),
+      "noShow"
+    );
+  });
+
+  it("skips cancelled bookings", () => {
+    assert.equal(
+      classifyBookingForVisitTrend(
+        {
+          bookedAt: new Date("2026-06-01T09:00:00Z"),
+          attended: false,
+          status: "cancelled",
+        },
+        NOW
+      ),
+      null
+    );
+  });
+});
+
+describe("applyBookingToVisitTrend", () => {
+  it("does not add today future classes to the trend", () => {
+    const dateMap = Object.fromEntries(
+      dateKeysForPastDays(30, new Date(NOW)).map((key) => [key, { visits: 0, noShows: 0 }])
+    );
+    applyBookingToVisitTrend(
+      dateMap,
+      {
+        bookedAt: new Date("2026-06-01T20:00:00Z"),
+        attended: false,
+        status: "confirmed",
+      },
+      NOW
+    );
+    const todayKey = dateKeysForPastDays(30, new Date(NOW)).at(-1);
+    assert.equal(dateMap[todayKey].noShows, 0);
   });
 });
 

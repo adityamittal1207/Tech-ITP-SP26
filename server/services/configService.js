@@ -1,6 +1,7 @@
 import businessConfig from "../config/businessConfig.js";
 import StudioSettings from "../models/StudioSettings.js";
 import { runRetentionScoring } from "./scoringJob.js";
+import { BOOKING_CANCEL_TYPES, ensureCancelLinkPlaceholder } from "./smsBody.js";
 
 export const DEFAULT_REMINDER_TIMING = [
   { id: "rt1", name: "Morning classes", firstReminder: "12h before", secondReminder: "1h before", note: "Early classes need earlier nudges" },
@@ -8,7 +9,7 @@ export const DEFAULT_REMINDER_TIMING = [
   { id: "rt3", name: "Weekend classes", firstReminder: "24h before", secondReminder: "2h before", note: "" },
 ];
 
-const SMS_TEMPLATE_KEYS = ["reminder", "atRisk", "winback", "milestone", "welcome", "confirmAck", "cancelAck"];
+const SMS_TEMPLATE_KEYS = ["reminder", "atRisk", "winback", "milestone", "welcome", "confirmAck", "cancelAck", "waitlistPromoted", "waitlistJoined"];
 
 export function buildDefaultSettings(ownerUid) {
   return {
@@ -32,8 +33,13 @@ function mergeSmsTemplates(stored) {
   if (!stored || typeof stored !== "object") return merged;
   for (const key of SMS_TEMPLATE_KEYS) {
     if (typeof stored[key] === "string" && stored[key].trim()) {
-      merged[key] = stored[key].trim();
+      merged[key] = BOOKING_CANCEL_TYPES.has(key)
+        ? ensureCancelLinkPlaceholder(stored[key].trim(), key)
+        : stored[key].trim();
     }
+  }
+  for (const key of BOOKING_CANCEL_TYPES) {
+    merged[key] = ensureCancelLinkPlaceholder(merged[key] ?? defaults[key] ?? "", key);
   }
   return merged;
 }
@@ -92,6 +98,35 @@ export async function getEffectiveConfig(ownerUid) {
   };
 }
 
+const REMINDER_HOURS_PATTERN = /^(\d+)h before$/;
+
+function parseReminderHours(value) {
+  const match = REMINDER_HOURS_PATTERN.exec(String(value ?? "").trim());
+  return match ? Number(match[1]) : null;
+}
+
+function validateReminderTiming(timing) {
+  if (!Array.isArray(timing) || timing.length === 0) {
+    throw Object.assign(new Error("reminderTiming must be a non-empty array"), { status: 400 });
+  }
+  for (const row of timing) {
+    if (!row?.id || !row?.name) {
+      throw Object.assign(new Error("Each reminder timing row needs id and name"), { status: 400 });
+    }
+    const first = parseReminderHours(row.firstReminder);
+    const second = parseReminderHours(row.secondReminder);
+    if (!first || !second || first < 1 || first > 72 || second < 1 || second > 24) {
+      throw Object.assign(new Error(`${row.name}: invalid reminder hours`), { status: 400 });
+    }
+    if (first <= second) {
+      throw Object.assign(
+        new Error(`${row.name}: first reminder must be earlier than the second`),
+        { status: 400 }
+      );
+    }
+  }
+}
+
 function validateRetention(retention) {
   const { newMemberDays, daysUntilAtRisk, daysUntilLapsed } = retention;
   for (const [key, val] of Object.entries({ newMemberDays, daysUntilAtRisk, daysUntilLapsed })) {
@@ -124,6 +159,7 @@ export async function updateSettings(ownerUid, patch) {
   }
 
   if (patch.reminderTiming) {
+    validateReminderTiming(patch.reminderTiming);
     base.reminderTiming = patch.reminderTiming;
   }
 

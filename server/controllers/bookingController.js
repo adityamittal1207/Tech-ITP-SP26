@@ -1,12 +1,22 @@
 import Booking from "../models/Booking.js";
 import {
   cancelBooking,
-  confirmBooking,
   createBooking,
   localDateKey,
   markAttended,
+  promoteBookingFromWaitlist,
 } from "../services/bookingService.js";
+import { sendTemplate } from "../services/messageService.js";
 import { getOwnerUid } from "../utils/tenant.js";
+
+function formatTime12(time24) {
+  const [hStr, mStr] = time24.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  const suffix = h < 12 ? "AM" : "PM";
+  const hour = ((h + 11) % 12) + 1;
+  return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+}
 
 export async function getBookings(req, res, next) {
   try {
@@ -58,14 +68,10 @@ export async function createBookingHandler(req, res, next) {
 export async function updateBooking(req, res, next) {
   try {
     const ownerUid = getOwnerUid(req);
-    const { attended, status } = req.body;
+    const { attended } = req.body;
 
     if (attended !== undefined) {
       const booking = await markAttended(req.params.id, ownerUid, attended);
-      return res.json(booking);
-    }
-    if (status === "confirmed") {
-      const booking = await confirmBooking(req.params.id, ownerUid, { by: "staff" });
       return res.json(booking);
     }
 
@@ -94,6 +100,30 @@ export async function deleteBooking(req, res, next) {
 export async function cancelBookingHandler(req, res, next) {
   try {
     const ownerUid = getOwnerUid(req);
+    const { message } = req.body ?? {};
+
+    if (typeof message === "string" && message.trim()) {
+      const existing = await Booking.findOne({ _id: req.params.id, ownerUid })
+        .populate("memberId", "name phone")
+        .populate("classId", "name time");
+      if (!existing) return res.status(404).json({ message: "Booking not found" });
+      try {
+        await sendTemplate(
+          existing.memberId._id,
+          "cancelAck",
+          {
+            firstName: existing.memberId.name.split(" ")[0],
+            className: existing.classId.name,
+            classTime: formatTime12(existing.classId.time),
+          },
+          message.trim(),
+          { bookingId: existing._id }
+        );
+      } catch (smsErr) {
+        return res.status(502).json({ message: smsErr.message });
+      }
+    }
+
     const booking = await cancelBooking(req.params.id, ownerUid, { by: "staff" });
     res.json(booking);
   } catch (error) {
@@ -101,12 +131,15 @@ export async function cancelBookingHandler(req, res, next) {
   }
 }
 
-export async function confirmBookingHandler(req, res, next) {
+export async function promoteFromWaitlistHandler(req, res, next) {
   try {
     const ownerUid = getOwnerUid(req);
-    const booking = await confirmBooking(req.params.id, ownerUid, { by: "staff" });
+    const booking = await promoteBookingFromWaitlist(req.params.id, ownerUid);
     res.json(booking);
   } catch (error) {
+    if (error.status === 400 || error.status === 404) {
+      return res.status(error.status).json({ message: error.message });
+    }
     next(error);
   }
 }

@@ -20,7 +20,11 @@ export async function twilioInboundSms(req, res, next) {
     const from = req.body.From;
     const body = req.body.Body;
     const result = await handleInboundSms(from, body);
-    console.log("Inbound SMS:", { from, body, result });
+    if (!result.handled) {
+      console.warn("Inbound SMS not handled:", { from, body, result });
+    } else {
+      console.log("Inbound SMS handled:", { from, body, result });
+    }
 
     res.type("text/xml").send("<Response></Response>");
   } catch (error) {

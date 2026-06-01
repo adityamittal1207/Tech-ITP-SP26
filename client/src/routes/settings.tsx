@@ -15,8 +15,16 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Check, Copy, Link2, Plug, Mail, Phone, Sliders, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
+import { formatStudioDateTime } from "@/lib/studioTimezone";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({ meta: [{ title: "Settings — Tether" }] }),
@@ -35,6 +43,26 @@ const RETENTION_LABELS: Record<RetentionField, string> = {
   daysUntilLapsed: "Days until lapsed",
 };
 
+type ReminderTimingRow = {
+  id: string;
+  name: string;
+  firstReminder: string;
+  secondReminder: string;
+  note?: string;
+};
+
+const FIRST_REMINDER_OPTIONS = [48, 24, 12, 6, 4, 2, 1];
+const SECOND_REMINDER_OPTIONS = [6, 4, 3, 2, 1];
+
+function parseReminderHours(value: string): number | null {
+  const match = /^(\d+)h before$/.exec(value.trim());
+  return match ? Number(match[1]) : null;
+}
+
+function formatReminderHours(hours: number): string {
+  return `${hours}h before`;
+}
+
 function SettingsPage() {
   const { data, isLoading, isError, error } = useSettingsPage();
   const importCsv = useImportCsv();
@@ -42,6 +70,9 @@ function SettingsPage() {
   const [importResult, setImportResult] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<RetentionField | null>(null);
   const [draftDays, setDraftDays] = useState("");
+  const [editingReminderId, setEditingReminderId] = useState<string | null>(null);
+  const [draftFirstHours, setDraftFirstHours] = useState("");
+  const [draftSecondHours, setDraftSecondHours] = useState("");
   const fileRefs = {
     mindbody: {
       members: useRef<HTMLInputElement>(null),
@@ -58,7 +89,7 @@ function SettingsPage() {
   if (isLoading) return <PageLoader />;
   if (isError || !data) return <PageError message={error?.message ?? "Failed to load settings"} />;
 
-  const { studio, retention, integrations, lastImport, exportGuides, booking } = data;
+  const { studio, retention, reminderTiming, integrations, lastImport, exportGuides, booking } = data;
   const [slugDraft, setSlugDraft] = useState(booking.slug);
   const [publicEnabled, setPublicEnabled] = useState(booking.publicBookingEnabled);
 
@@ -130,6 +161,59 @@ function SettingsPage() {
     );
   };
 
+  const editingReminder = reminderTiming.find((row) => row.id === editingReminderId) ?? null;
+
+  const openReminderEdit = (row: ReminderTimingRow) => {
+    setEditingReminderId(row.id);
+    setDraftFirstHours(String(parseReminderHours(row.firstReminder) ?? 24));
+    setDraftSecondHours(String(parseReminderHours(row.secondReminder) ?? 2));
+  };
+
+  const closeReminderEdit = () => {
+    setEditingReminderId(null);
+    setDraftFirstHours("");
+    setDraftSecondHours("");
+  };
+
+  const saveReminderEdit = () => {
+    if (!editingReminderId) return;
+    const first = Number(draftFirstHours);
+    const second = Number(draftSecondHours);
+    if (!Number.isInteger(first) || first < 1 || first > 72) {
+      toast.error("First reminder must be 1–72 hours before class");
+      return;
+    }
+    if (!Number.isInteger(second) || second < 1 || second > 24) {
+      toast.error("Second reminder must be 1–24 hours before class");
+      return;
+    }
+    if (first <= second) {
+      toast.error("First reminder must be earlier than the second");
+      return;
+    }
+
+    const updated = reminderTiming.map((row) =>
+      row.id === editingReminderId
+        ? {
+            ...row,
+            firstReminder: formatReminderHours(first),
+            secondReminder: formatReminderHours(second),
+          }
+        : row
+    );
+
+    updateSettings.mutate(
+      { reminderTiming: updated },
+      {
+        onSuccess: () => {
+          toast.success("Reminder timing updated");
+          closeReminderEdit();
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    );
+  };
+
   return (
     <div className="space-y-8">
       <PageHeader
@@ -139,7 +223,7 @@ function SettingsPage() {
 
       {lastImport && (
         <p className="text-xs text-muted-foreground -mt-4">
-          Last import: {new Date(lastImport.ranAt).toLocaleString()} — {lastImport.summary.source ?? "native"}{" "}
+          Last import: {formatStudioDateTime(lastImport.ranAt)} — {lastImport.summary.source ?? "native"}{" "}
           {lastImport.summary.kind}: {lastImport.summary.imported} new, {lastImport.summary.updated} updated
         </p>
       )}
@@ -370,25 +454,80 @@ function SettingsPage() {
       <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <SectionTitle title="Per-class-type reminder timing" subtitle="Default reminder cadence" />
         <div className="space-y-2">
-          {[
-            { name: "Morning classes", first: "12h before", second: "1h before", note: "Early classes need earlier nudges" },
-            { name: "Evening classes", first: "24h before", second: "2h before", note: "" },
-            { name: "Weekend classes", first: "24h before", second: "2h before", note: "" },
-          ].map((c) => (
-            <div key={c.name} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
+          {reminderTiming.map((c) => (
+            <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3">
               <div className="font-medium text-sm min-w-[140px]">{c.name}</div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="rounded-md bg-muted px-2 py-1">1st: {c.first}</span>
-                <span className="rounded-md bg-muted px-2 py-1">2nd: {c.second}</span>
+                <span className="rounded-md bg-muted px-2 py-1">1st: {c.firstReminder}</span>
+                <span className="rounded-md bg-muted px-2 py-1">2nd: {c.secondReminder}</span>
               </div>
-              <div className="text-xs text-muted-foreground italic">{c.note}</div>
-              <button type="button" className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline">
+              {c.note ? <div className="text-xs text-muted-foreground italic">{c.note}</div> : null}
+              <button
+                type="button"
+                onClick={() => openReminderEdit(c)}
+                className="inline-flex items-center gap-1 text-xs text-primary font-medium hover:underline"
+              >
                 <Sliders className="h-3.5 w-3.5" /> Edit
               </button>
             </div>
           ))}
         </div>
       </div>
+
+      <Dialog open={editingReminderId !== null} onOpenChange={(open) => !open && closeReminderEdit()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit reminder timing</DialogTitle>
+            <DialogDescription>
+              {editingReminder?.name ?? "Class type"} — when SMS reminders go out before class.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label htmlFor="first-reminder" className="text-sm font-medium">
+                First reminder
+              </label>
+              <Select value={draftFirstHours} onValueChange={setDraftFirstHours}>
+                <SelectTrigger id="first-reminder">
+                  <SelectValue placeholder="Hours before" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FIRST_REMINDER_OPTIONS.map((hours) => (
+                    <SelectItem key={hours} value={String(hours)}>
+                      {formatReminderHours(hours)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="second-reminder" className="text-sm font-medium">
+                Second reminder
+              </label>
+              <Select value={draftSecondHours} onValueChange={setDraftSecondHours}>
+                <SelectTrigger id="second-reminder">
+                  <SelectValue placeholder="Hours before" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SECOND_REMINDER_OPTIONS.map((hours) => (
+                    <SelectItem key={hours} value={String(hours)}>
+                      {formatReminderHours(hours)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={closeReminderEdit}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveReminderEdit} disabled={updateSettings.isPending}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="text-xs text-muted-foreground text-center pt-2">
         <Plug className="inline h-3 w-3 mr-1" /> No API keys required — export CSV from Mindbody or Acuity and upload here.

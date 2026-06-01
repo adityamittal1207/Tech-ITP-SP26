@@ -1,3 +1,5 @@
+import { localDateKey } from "../utils/studioTimezone.js";
+
 const MEMBERSHIP_LTV = { basic: 15, premium: 28, unlimited: 45 };
 const MS_PER_DAY = 86_400_000;
 
@@ -10,6 +12,27 @@ export function bookingMemberId(booking) {
   if (mid == null) return null;
   if (typeof mid === "object" && mid._id != null) return String(mid._id);
   return String(mid);
+}
+
+/** Class session has started (bookedAt is the occurrence start time). */
+export function hasSessionStarted(booking, now = Date.now()) {
+  return bookingVisitMs(booking) <= now;
+}
+
+/** Visit trend bucket: visit, noShow, or skip (future session / cancelled). */
+export function classifyBookingForVisitTrend(booking, now = Date.now()) {
+  if (booking.status === "cancelled") return null;
+  if (!hasSessionStarted(booking, now)) return null;
+  return booking.attended ? "visit" : "noShow";
+}
+
+export function applyBookingToVisitTrend(dateMap, booking, now = Date.now()) {
+  const kind = classifyBookingForVisitTrend(booking, now);
+  if (!kind) return;
+  const key = localDateKey(booking.bookedAt);
+  if (!(key in dateMap)) return;
+  if (kind === "visit") dateMap[key].visits++;
+  else dateMap[key].noShows++;
 }
 
 /** Counts toward visit stats — staff-marked attendance always counts. */

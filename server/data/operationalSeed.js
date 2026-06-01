@@ -1,4 +1,10 @@
 import { resolveOccurrenceDateTime, localDateKey } from "../services/bookingService.js";
+import {
+  addDaysToDateKey,
+  studioDateTimeUtc,
+  studioDayName,
+  studioDayNameFromDateKey,
+} from "../utils/studioTimezone.js";
 
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000);
 
@@ -170,7 +176,21 @@ export function generateOperationalSeed(memberCount = 150) {
     isActive: true,
   }));
 
-  return { memberProfiles, memberDocs, classData: CLASS_DATA };
+  const todayDow = studioDayName();
+  const classData = [
+    ...CLASS_DATA,
+    {
+      name: "Midday Express",
+      instructor: "Chris Yates",
+      dayOfWeek: todayDow,
+      time: "12:30",
+      durationMinutes: 45,
+      capacity: 16,
+      category: "hiit",
+    },
+  ];
+
+  return { memberProfiles, memberDocs, classData };
 }
 
 function classIndexFor(memberIdx, bookingIdx, classes) {
@@ -187,7 +207,7 @@ export function buildBookings(memberProfiles, classes) {
         classIdx,
         bookedAt: bookedAtForClass(classes[classIdx], offset),
         attended: rand() > 0.2,
-        status: rand() > 0.85 ? "confirmed" : "booked",
+        status: "booked",
         source: "import",
       });
     });
@@ -216,71 +236,78 @@ export function buildSupplementalBookings(memberProfiles, classes) {
   return bookings;
 }
 
-const DAY_NAMES = [
-  "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
-];
 
-/** Bookings dated today for classes on today's weekday — powers dashboard fill. */
+const TODAY_FILL_SCENARIOS = ["full_waitlist", "perfect", "under"];
+
+function allocateTodayMember(memberProfiles, startIdx, classIdx, usedSlots) {
+  let memberIdx = startIdx;
+  for (let attempt = 0; attempt < memberProfiles.length; attempt++) {
+    const mIdx = memberIdx % memberProfiles.length;
+    const slotKey = `${mIdx}:${classIdx}`;
+    if (!usedSlots.has(slotKey)) {
+      usedSlots.add(slotKey);
+      return { memberIdx: mIdx, nextIdx: memberIdx + 1 };
+    }
+    memberIdx++;
+  }
+  return { memberIdx: startIdx % memberProfiles.length, nextIdx: startIdx + 1 };
+}
+
+/** Bookings dated today — full+waitlist, at-capacity, and under-booked demos. */
 export function buildTodayBookings(memberProfiles, classes) {
-  const today = new Date();
-  const todayDow = DAY_NAMES[today.getDay()];
-  const todayClasses = classes.filter((c) => c.dayOfWeek === todayDow);
+  const todayKey = localDateKey();
+  const todayDow = studioDayName();
+  const todayClasses = classes
+    .filter((c) => c.dayOfWeek === todayDow)
+    .sort((a, b) => a.time.localeCompare(b.time));
   const bookings = [];
-  let memberIdx = 0;
+  let memberIdx = 1;
   const usedSlots = new Set();
 
-  for (const cls of todayClasses) {
+  todayClasses.forEach((cls, scenarioIdx) => {
     const classIdx = classes.indexOf(cls);
-    const targetBooked = Math.max(1, Math.floor(cls.capacity * (0.45 + rand() * 0.4)));
+    const scenario = TODAY_FILL_SCENARIOS[scenarioIdx % TODAY_FILL_SCENARIOS.length];
+    const [hStr, mStr] = cls.time.split(":");
+    const bookedAt = studioDateTimeUtc(todayKey, Number(hStr), Number(mStr));
+
+    let targetBooked;
+    let targetWaitlist;
+    switch (scenario) {
+      case "full_waitlist":
+        targetBooked = cls.capacity;
+        targetWaitlist = 5;
+        break;
+      case "perfect":
+        targetBooked = cls.capacity;
+        targetWaitlist = 0;
+        break;
+      case "under":
+      default:
+        targetBooked = Math.max(1, Math.floor(cls.capacity * 0.35));
+        targetWaitlist = 0;
+        break;
+    }
+
     for (let i = 0; i < targetBooked; i++) {
-      let mIdx = memberIdx++ % memberProfiles.length;
-      let slotKey = `${mIdx}:${classIdx}`;
-      while (usedSlots.has(slotKey)) {
-        mIdx = memberIdx++ % memberProfiles.length;
-        slotKey = `${mIdx}:${classIdx}`;
-      }
-      usedSlots.add(slotKey);
-      const [hStr, mStr] = cls.time.split(":");
-      const bookedAt = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate(),
-        Number(hStr),
-        Number(mStr),
-        0,
-        0
-      );
+      const slot = allocateTodayMember(memberProfiles, memberIdx, classIdx, usedSlots);
+      memberIdx = slot.nextIdx;
+      const classStarted = bookedAt.getTime() <= Date.now();
       bookings.push({
-        memberIdx: mIdx,
+        memberIdx: slot.memberIdx,
         classIdx,
         bookedAt,
-        attended: false,
-        status: i % 4 === 0 ? "confirmed" : "booked",
-        source: "staff",
+        attended: classStarted ? rand() > 0.18 : false,
+        status: "booked",
+        source: i % 3 === 0 ? "public" : "staff",
         reminderSent: i < 3,
       });
     }
-    const waitlistCount = Math.max(1, Math.floor(cls.capacity * 0.12));
-    for (let w = 0; w < waitlistCount; w++) {
-      const [hStr, mStr] = cls.time.split(":");
-      const bookedAt = new Date(
-        today.getFullYear(),
-        today.getMonth(),
-        today.getDate(),
-        Number(hStr),
-        Number(mStr),
-        0,
-        0
-      );
-      let mIdx = memberIdx++ % memberProfiles.length;
-      let slotKey = `${mIdx}:${classIdx}`;
-      while (usedSlots.has(slotKey)) {
-        mIdx = memberIdx++ % memberProfiles.length;
-        slotKey = `${mIdx}:${classIdx}`;
-      }
-      usedSlots.add(slotKey);
+
+    for (let w = 0; w < targetWaitlist; w++) {
+      const slot = allocateTodayMember(memberProfiles, memberIdx, classIdx, usedSlots);
+      memberIdx = slot.nextIdx;
       bookings.push({
-        memberIdx: mIdx,
+        memberIdx: slot.memberIdx,
         classIdx,
         bookedAt,
         attended: false,
@@ -288,16 +315,16 @@ export function buildTodayBookings(memberProfiles, classes) {
         source: "public",
       });
     }
-  }
+  });
+
   return bookings;
 }
 
 /** Tomorrow's classes — powers reminder / SMS reply demo on home activity feed. */
 export function buildTomorrowBookings(memberProfiles, classes) {
-  const tomorrow = new Date(Date.now() + 86_400_000);
-  const tomorrowDow = DAY_NAMES[tomorrow.getDay()];
+  const dateKey = addDaysToDateKey(localDateKey(), 1);
+  const tomorrowDow = studioDayNameFromDateKey(dateKey);
   const tomorrowClasses = classes.filter((c) => c.dayOfWeek === tomorrowDow);
-  const dateKey = localDateKey(tomorrow);
   const bookings = [];
   let memberIdx = 0;
 
@@ -310,10 +337,9 @@ export function buildTomorrowBookings(memberProfiles, classes) {
         classIdx: classes.indexOf(cls),
         bookedAt: occurrence,
         attended: false,
-        status: i === 0 ? "confirmed" : "booked",
+        status: "booked",
         source: i === 1 ? "public" : "staff",
         reminderSent: true,
-        confirmedAt: i === 0 ? new Date() : undefined,
       });
     }
   }

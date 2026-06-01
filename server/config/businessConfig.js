@@ -21,9 +21,11 @@ export default {
     secondHours: 2,
   },
   smsTemplates: {
-    reminder: "Hi {firstName}, reminder: {className} is {classTime}. Reply Y to confirm, C to cancel.",
+    reminder: "Hi {firstName}, reminder: {className} is {classTime}. Cancel: {cancelLink}",
     confirmAck: "You're confirmed for {className} at {classTime}. See you there!",
     cancelAck: "Your spot for {className} at {classTime} is cancelled. Reply anytime to rebook.",
+    waitlistPromoted: "Hi {firstName}, you're in for {className} at {classTime}. Cancel: {cancelLink}",
+    waitlistJoined: "Hi {firstName}, you're on the waitlist for {className} at {classTime}. We'll text if a spot opens. Cancel: {cancelLink}",
     atRisk:   "Hi {firstName}, we've missed you! It's been a while since your last class. Come back and join us.",
     winback:  "Hi {firstName}, we haven't seen you in a while. We'd love to have you back — check the latest schedule and book your spot.",
     milestone: "Congrats, {firstName}! You've hit {visitCount} visits at Lumnus Studio. We love having you here.",

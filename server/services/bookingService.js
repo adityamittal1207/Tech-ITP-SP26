@@ -2,18 +2,25 @@ import Booking from "../models/Booking.js";
 import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import config from "../config/businessConfig.js";
+import {
+  addDaysToDateKey,
+  getWeekStartKey,
+  localDateKey,
+  studioDateTimeUtc,
+  studioDayIndexFromDateKey,
+  studioDayNameFromDateKey,
+} from "../utils/studioTimezone.js";
 import { computeStatus } from "./retentionService.js";
 import { sendTemplate } from "./messageService.js";
+import { buildCancelUrl } from "./cancelLinkService.js";
+import { shouldIncludeCancelLink } from "./smsBody.js";
 
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const DAY_INDEX = Object.fromEntries(DAY_NAMES.map((d, i) => [d, i]));
 
-const ACTIVE_STATUSES = ["booked", "confirmed", "waitlisted"];
-const TZ = process.env.STUDIO_TIMEZONE || "America/Los_Angeles";
+const ACTIVE_STATUSES = ["booked", "waitlisted"];
 
-export function localDateKey(date = new Date()) {
-  return date.toLocaleDateString("en-CA", { timeZone: TZ });
-}
+export { localDateKey, getWeekStartKey };
 
 export function parseTime24(timeStr) {
   const [hStr, mStr] = timeStr.split(":");
@@ -21,26 +28,15 @@ export function parseTime24(timeStr) {
 }
 
 export function resolveOccurrenceDateTime(cls, dateKey) {
-  const [y, m, d] = dateKey.split("-").map(Number);
   const { hours, minutes } = parseTime24(cls.time);
-  const dow = new Date(y, m - 1, d).getDay();
+  const dow = studioDayIndexFromDateKey(dateKey);
   const expected = DAY_INDEX[cls.dayOfWeek?.toLowerCase()];
   if (expected !== undefined && dow !== expected) {
     let diff = expected - dow;
     if (diff < 0) diff += 7;
-    const adjusted = new Date(y, m - 1, d + diff, hours, minutes, 0, 0);
-    return adjusted;
+    dateKey = addDaysToDateKey(dateKey, diff);
   }
-  return new Date(y, m - 1, d, hours, minutes, 0, 0);
-}
-
-export function getWeekStartKey(dateKey) {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const dow = date.getUTCDay();
-  const mondayOffset = dow === 0 ? -6 : 1 - dow;
-  date.setUTCDate(date.getUTCDate() + mondayOffset);
-  return localDateKey(date);
+  return studioDateTimeUtc(dateKey, hours, minutes);
 }
 
 function formatTime12(time24) {
@@ -59,7 +55,7 @@ export async function countActiveBookings(ownerUid, classId, bookedAt) {
     ownerUid,
     classId,
     bookedAt: { $gte: start, $lt: end },
-    status: { $in: ["booked", "confirmed"] },
+    status: { $in: ["booked"] },
   });
 }
 
@@ -127,8 +123,9 @@ export async function createBooking({
     throw Object.assign(new Error("Member already booked for this class"), { status: 409 });
   }
 
+  let status;
   const activeCount = await countActiveBookings(ownerUid, classId, bookedAt);
-  const status = activeCount >= cls.capacity ? "waitlisted" : "booked";
+  status = activeCount >= cls.capacity ? "waitlisted" : "booked";
 
   let booking;
   if (existing?.status === "cancelled") {
@@ -137,7 +134,6 @@ export async function createBooking({
       {
         status,
         attended: false,
-        confirmedAt: null,
         cancelledAt: null,
         source,
         externalSource: "native",
@@ -157,24 +153,70 @@ export async function createBooking({
   }
 
   await syncMemberRetention(ownerUid, memberId);
+
+  if (status === "waitlisted") {
+    await notifyWaitlistJoined(member, cls, booking);
+  }
+
   return Booking.findById(booking._id)
     .populate("memberId", "name email phone")
     .populate("classId", "name time dayOfWeek");
 }
 
-export async function promoteWaitlist(ownerUid, classId, bookedAt) {
-  const start = new Date(bookedAt);
-  const end = new Date(start.getTime() + 60000);
-  const next = await Booking.findOne({
-    ownerUid,
-    classId,
-    bookedAt: { $gte: start, $lt: end },
-    status: "waitlisted",
-  }).sort({ createdAt: 1 });
-  if (!next) return null;
-  next.status = "booked";
-  await next.save();
-  return next;
+export async function promoteBookingFromWaitlist(bookingId, ownerUid) {
+  const booking = await Booking.findOne({ _id: bookingId, ownerUid });
+  if (!booking) throw Object.assign(new Error("Booking not found"), { status: 404 });
+  if (booking.status !== "waitlisted") {
+    throw Object.assign(new Error("Only waitlisted bookings can be promoted"), { status: 400 });
+  }
+
+  const cls = await Class.findOne({ _id: booking.classId, ownerUid });
+  if (!cls) throw Object.assign(new Error("Class not found"), { status: 404 });
+
+  const booked = await countActiveBookings(ownerUid, booking.classId, booking.bookedAt);
+  if (booked >= cls.capacity) {
+    throw Object.assign(
+      new Error("Class is full — increase class size or remove a booking first"),
+      { status: 400 }
+    );
+  }
+
+  booking.status = "booked";
+  booking.reminderSent = true;
+  booking.reminderSentAt = booking.reminderSentAt ?? new Date();
+  await booking.save();
+
+  const member = await Member.findOne({ _id: booking.memberId, ownerUid });
+  await notifyWaitlistPromotion(member, cls, booking);
+  await syncMemberRetention(ownerUid, booking.memberId);
+  return booking;
+}
+
+async function notifyBookingSms(member, cls, booking, type) {
+  if (!member?.phone || !cls || !booking) return;
+  try {
+    await sendTemplate(
+      member._id,
+      type,
+      {
+        firstName: member.name.split(" ")[0],
+        className: cls.name,
+        classTime: formatTime12(cls.time),
+      },
+      undefined,
+      { bookingId: booking._id }
+    );
+  } catch (err) {
+    console.error(`${type} SMS failed:`, err.message);
+  }
+}
+
+async function notifyWaitlistJoined(member, cls, booking) {
+  await notifyBookingSms(member, cls, booking, "waitlistJoined");
+}
+
+async function notifyWaitlistPromotion(member, cls, booking) {
+  await notifyBookingSms(member, cls, booking, "waitlistPromoted");
 }
 
 export async function cancelBooking(bookingId, ownerUid, { by = "staff" } = {}) {
@@ -182,28 +224,11 @@ export async function cancelBooking(bookingId, ownerUid, { by = "staff" } = {}) 
   if (!booking) throw Object.assign(new Error("Booking not found"), { status: 404 });
   if (booking.status === "cancelled") return booking;
 
-  const wasActive = ["booked", "confirmed"].includes(booking.status);
   booking.status = "cancelled";
   booking.cancelledAt = new Date();
   await booking.save();
 
-  if (wasActive) {
-    await promoteWaitlist(ownerUid, booking.classId, booking.bookedAt);
-  }
-
   await syncMemberRetention(ownerUid, booking.memberId);
-  return booking;
-}
-
-export async function confirmBooking(bookingId, ownerUid, { by = "staff" } = {}) {
-  const booking = await Booking.findOne({ _id: bookingId, ownerUid });
-  if (!booking) throw Object.assign(new Error("Booking not found"), { status: 404 });
-  if (booking.status === "cancelled") {
-    throw Object.assign(new Error("Cannot confirm a cancelled booking"), { status: 400 });
-  }
-  booking.status = "confirmed";
-  booking.confirmedAt = new Date();
-  await booking.save();
   return booking;
 }
 
@@ -242,6 +267,12 @@ export async function getRoster(ownerUid, classId, dateKey) {
       status: b.status,
       attended: b.attended,
       reminderSent: b.reminderSent || Boolean(b.reminderSentAt),
+      cancelLink: shouldIncludeCancelLink(
+        b.status === "waitlisted" ? "waitlistJoined" : "reminder",
+        b.status
+      )
+        ? buildCancelUrl(b._id, ownerUid, b.bookedAt)
+        : null,
       member: b.memberId
         ? {
             id: String(b.memberId._id),
@@ -273,10 +304,8 @@ export async function getWeekSchedule(ownerUid, weekStartKey) {
 
   const days = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(startDate);
-    d.setUTCDate(d.getUTCDate() + i);
-    const dateKey = localDateKey(d);
-    const dayName = DAY_NAMES[d.getUTCDay()];
+    const dateKey = addDaysToDateKey(weekStart, i);
+    const dayName = studioDayNameFromDateKey(dateKey);
 
     const occurrences = classes
       .filter((c) => c.dayOfWeek === dayName)
@@ -288,7 +317,7 @@ export async function getWeekSchedule(ownerUid, weekStartKey) {
           const bt = new Date(b.bookedAt).getTime();
           return String(b.classId) === String(c._id) && bt >= occStart.getTime() && bt < occEnd.getTime();
         });
-        const booked = slotBookings.filter((b) => ["booked", "confirmed"].includes(b.status)).length;
+        const booked = slotBookings.filter((b) => b.status === "booked").length;
         const waitlisted = slotBookings.filter((b) => b.status === "waitlisted").length;
         return {
           classId: String(c._id),

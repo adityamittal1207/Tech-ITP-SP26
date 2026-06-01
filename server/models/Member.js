@@ -15,7 +15,6 @@ const memberSchema = new mongoose.Schema(
     },
     email: {
       type: String,
-      required: [true, "Email is required"],
       lowercase: true,
       trim: true,
     },
@@ -78,7 +77,8 @@ const memberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-memberSchema.index({ ownerUid: 1, email: 1 }, { unique: true });
+memberSchema.index({ ownerUid: 1, email: 1 }, { unique: true, sparse: true });
+memberSchema.index({ ownerUid: 1, phone: 1 }, { unique: true });
 memberSchema.index({ externalSource: 1, externalId: 1 }, { sparse: true });
 
 export default mongoose.model("Member", memberSchema);

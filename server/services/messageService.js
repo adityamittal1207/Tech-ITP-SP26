@@ -1,5 +1,8 @@
+import Booking from "../models/Booking.js";
 import Message from "../models/Message.js";
 import Member from "../models/Member.js";
+import { buildCancelUrl } from "./cancelLinkService.js";
+import { BOOKING_CANCEL_TYPES, buildSmsBody, ensureCancelLinkPlaceholder, shouldIncludeCancelLink } from "./smsBody.js";
 import { getEffectiveConfig } from "./configService.js";
 import { sendSMS } from "./twilioService.js";
 
@@ -21,7 +24,28 @@ export async function sendTemplate(
   }
 
   const mergeData = { firstName: member.name.split(" ")[0], ...extraMergeData };
-  const body = (bodyOverride ?? template).replace(/\{(\w+)\}/g, (_, key) => mergeData[key] ?? `{${key}}`);
+
+  let bookingStatus;
+  if (bookingId) {
+    const booking = await Booking.findById(bookingId).select("ownerUid bookedAt status");
+    if (booking) {
+      bookingStatus = booking.status;
+      if (shouldIncludeCancelLink(type, booking.status)) {
+        mergeData.cancelLink = buildCancelUrl(booking._id, booking.ownerUid, booking.bookedAt);
+      }
+    }
+  }
+
+  const resolvedTemplate = BOOKING_CANCEL_TYPES.has(type)
+    ? ensureCancelLinkPlaceholder(template ?? "", type)
+    : (template ?? "");
+
+  const body = buildSmsBody({
+    template: resolvedTemplate,
+    bodyOverride,
+    mergeData: { ...mergeData, _bookingStatus: bookingStatus },
+    type,
+  });
 
   let status = direction === "inbound" ? "received" : "sent";
   let twilioError = null;

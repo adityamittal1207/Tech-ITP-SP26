@@ -1,5 +1,9 @@
 import Class from "../models/Class.js";
 import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
+import {
+  countActiveBookings,
+  resolveOccurrenceDateTime,
+} from "../services/bookingService.js";
 
 export async function getClasses(req, res, next) {
   try {
@@ -32,12 +36,26 @@ export async function createClass(req, res, next) {
 export async function updateClass(req, res, next) {
   try {
     const ownerUid = getOwnerUid(req);
+    const { occurrenceDate, ...updates } = req.body;
+    const existing = await Class.findOne({ _id: req.params.id, ownerUid });
+    if (!existing) return res.status(404).json({ message: "Class not found" });
+
+    if (typeof updates.capacity === "number" && occurrenceDate) {
+      const bookedAt = resolveOccurrenceDateTime(existing, occurrenceDate);
+      const booked = await countActiveBookings(ownerUid, existing._id, bookedAt);
+      if (updates.capacity < booked) {
+        return res.status(400).json({
+          message: `Class size cannot be below ${booked} — that many members are already booked.`,
+        });
+      }
+    }
+
     const cls = await Class.findOneAndUpdate(
       { _id: req.params.id, ownerUid },
-      req.body,
+      updates,
       { new: true, runValidators: true },
     );
-    if (!cls) return res.status(404).json({ message: "Class not found" });
+
     res.json(cls);
   } catch (error) {
     next(error);

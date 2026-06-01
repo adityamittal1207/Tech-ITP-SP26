@@ -33,6 +33,8 @@ const studioSettingsSchema = new mongoose.Schema(
       welcome: String,
       confirmAck: String,
       cancelAck: String,
+      waitlistPromoted: String,
+      waitlistJoined: String,
     },
     bookingSlug: {
       type: String,

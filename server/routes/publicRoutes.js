@@ -6,6 +6,7 @@ import {
   getPublicSchedule,
   getPublicStudio,
 } from "../controllers/publicBookingController.js";
+import { getCancelByToken, postCancelByToken } from "../controllers/publicCancelController.js";
 
 const router = Router();
 
@@ -25,6 +26,9 @@ function rateLimit(req, res, next) {
   postCounts.set(ip, window);
   next();
 }
+
+router.get("/cancel/:token", getCancelByToken);
+router.post("/cancel/:token", rateLimit, postCancelByToken);
 
 router.get("/studios/:slug", getPublicStudio);
 router.get("/studios/:slug/schedule", getPublicSchedule);

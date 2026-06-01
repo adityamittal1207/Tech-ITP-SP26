@@ -493,12 +493,13 @@ function AnalyticsPage() {
 
 function Bar2({ value, color = "primary" }: { value: number; color?: "primary" | "success" }) {
   const pct = Math.round(value * 100);
+  const barWidth = Math.min(100, Math.max(0, pct));
   return (
     <div className="flex items-center gap-2 max-w-[180px]">
       <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
         <div
           className={cn("h-full rounded-full", color === "primary" ? "bg-primary" : "bg-success")}
-          style={{ width: `${pct}%` }}
+          style={{ width: `${barWidth}%` }}
         />
       </div>
       <div className="text-xs font-medium w-9 text-right">{pct}%</div>

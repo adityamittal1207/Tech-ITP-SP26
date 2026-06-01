@@ -9,8 +9,6 @@ import {
   Waves,
   Menu,
   X,
-  Bell,
-  Search,
   LogOut,
 } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +16,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStudio } from "@/hooks/use-studio-data";
 import { cn } from "@/lib/utils";
+import { formatStudioDate } from "@/lib/studioTimezone";
 
 const nav = [
   { to: "/", label: "Home", icon: Home, exact: true },
@@ -41,7 +40,7 @@ export function AppShell() {
     owner: "Maya Calderón",
   };
 
-  const today = new Date().toLocaleDateString("en-US", {
+  const today = formatStudioDate(new Date(), {
     weekday: "long", month: "long", day: "numeric",
   });
 
@@ -62,7 +61,6 @@ export function AppShell() {
           </div>
           <div className="leading-tight">
             <div className="font-display font-semibold text-sidebar-foreground">Tether</div>
-            <div className="text-[11px] text-muted-foreground">Boutique fitness OS</div>
           </div>
         </div>
         <nav className="p-3 space-y-1">
@@ -131,16 +129,6 @@ export function AppShell() {
           <div>
             <div className="font-display font-semibold text-base sm:text-lg">{STUDIO.name}</div>
             <div className="text-xs text-muted-foreground">{today}</div>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <div className="hidden md:flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-muted-foreground w-72">
-              <Search className="h-4 w-4" />
-              <span>Search clients, classes…</span>
-            </div>
-            <button className="relative h-9 w-9 rounded-lg border border-border bg-card flex items-center justify-center hover:bg-muted">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-accent-foreground" />
-            </button>
           </div>
         </header>
         <main className="p-4 lg:p-8 max-w-[1400px] mx-auto">

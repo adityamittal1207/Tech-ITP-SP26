@@ -16,7 +16,7 @@ export function useHomePage() {
       apiRequest<{
         studio: Studio;
         kpis: { label: string; value: number; delta: number; unit: string; invert?: boolean }[];
-        todayClasses: { id: string; name: string; time: string; instructor: string; booked: number; capacity: number; waitlist: number }[];
+        todayClasses: { id: string; name: string; time24: string; time: string; instructor: string; booked: number; capacity: number; waitlist: number }[];
         todaySummary: { classCount: number; bookedSeats: number };
         actionItems: { id: string; title: string; subtitle: string; cta: string; route: string }[];
         activityFeed: { id: string; type: string; text: string; time: string }[];
@@ -32,7 +32,8 @@ export function useClientsPage() {
       apiRequest<{
         clients: Client[];
         counts: Record<string, number>;
-        cohorts: { month: string; size: number; m1: number; m3: number | null; m6: number | null; m12: number | null }[];
+        cohorts: { label: string; size: number; d30: number | null; d90: number | null; d180: number | null; d365: number | null }[];
+        templates: { id: string; key: string; name: string; category: string; body: string }[];
       }>("/studio/clients"),
   });
 }
@@ -58,6 +59,13 @@ export function useSettingsPage() {
       apiRequest<{
         studio: Studio;
         retention: { newMemberDays: number; daysUntilAtRisk: number; daysUntilLapsed: number };
+        reminderTiming: {
+          id: string;
+          name: string;
+          firstReminder: string;
+          secondReminder: string;
+          note?: string;
+        }[];
         integrations: {
           id: string;
           name: string;

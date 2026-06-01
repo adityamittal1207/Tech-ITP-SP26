@@ -8,7 +8,7 @@ export const METRIC_EXPLANATIONS: Record<string, string> = {
   "Fill Rate":
     "Share of all bookings where the client attended (attended ÷ total bookings), from your booking records.",
   "Churn Rate":
-    "Share of all members currently in lapsed status — no booking within your lapsed threshold. Recalculated hourly from booking history.",
+    "Share of members in lapsed status — no visit within your lapsed threshold (after the new-member window). Uses the same rules as retention scoring on your booking history.",
   "4-Visit Conversion":
     "Share of members with at least four attended bookings on record.",
 
@@ -22,15 +22,15 @@ export const METRIC_EXPLANATIONS: Record<string, string> = {
   "Fill Rate change":
     "Change in attendance rate (attended ÷ total bookings) between the two 30-day windows.",
   "Churn Rate change":
-    "Change in lapsed share vs a snapshot of inactivity 30 days ago (members without a recent attended visit).",
+    "Change in lapsed share vs the same metric computed 30 days ago, using your retention thresholds at each point in time.",
   "4-Visit Conversion change":
     "Change in the share of members who joined in each window and reached four attended visits.",
 
   // Visits & attendance
   Visits:
-    "Attended bookings per day over the last 30 days — each booking where attended is true.",
+    "Attended bookings per day over the last 30 days — only after the class start time has passed (today’s later classes are excluded until they run).",
   "No-shows":
-    "Bookings where the client did not attend (attended = false), grouped by day over the last 30 days.",
+    "Bookings where the client did not attend, counted only after the class was scheduled to start — upcoming classes today are not counted as no-shows.",
 
   // Retention statuses
   New: "Joined within the last 30 days (configurable in Settings). Status is written hourly from join date and booking activity.",
@@ -48,11 +48,11 @@ export const METRIC_EXPLANATIONS: Record<string, string> = {
 
   // Cohort
   "Cohort retention":
-    "Groups members by join month. Each column is the share who had at least one attended visit within that many days after joining.",
-  M1: "Share of the cohort with at least one attended visit within 30 days of join date.",
-  M3: "Share with at least one attended visit within 90 days of join date (shown when the cohort is old enough).",
-  M6: "Share with at least one attended visit within 180 days of join date.",
-  M12: "Share with at least one attended visit within 365 days of join date.",
+    "Groups members by when they joined (30-day buckets). Each column is the share who had at least one attended visit within that many days after joining.",
+  "30d": "Share of the cohort with at least one attended visit within 30 days of join date (shown once every member in the bucket has been around at least 30 days).",
+  "90d": "Share with at least one attended visit within 90 days of join date (shown when the cohort is old enough).",
+  "180d": "Share with at least one attended visit within 180 days of join date.",
+  "365d": "Share with at least one attended visit within 365 days of join date.",
 
   // Settings
   "Retention thresholds":

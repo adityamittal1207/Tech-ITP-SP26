@@ -227,8 +227,8 @@ export function generateStudioData() {
   ];
 
   const reminderRules = [
-    { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Reply C to cancel · Y to confirm" },
-    { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Reply C to cancel" },
+    { id: "r1", name: "24-hour SMS reminder", trigger: "24h before class", enabled: true, replies: "Cancel link in SMS" },
+    { id: "r2", name: "2-hour SMS reminder", trigger: "2h before class", enabled: true, replies: "Cancel link in SMS" },
     { id: "r3", name: "Waitlist promotion", trigger: "Seat opens", enabled: true, replies: "Auto-books on Y" },
     { id: "r4", name: "No-show follow-up", trigger: "1h after missed class", enabled: true, replies: "Reply R to rebook this week" },
   ];

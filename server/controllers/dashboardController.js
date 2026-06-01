@@ -3,18 +3,27 @@ import Booking from "../models/Booking.js";
 import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import Message from "../models/Message.js";
-import { enrichMember, groupBookingsByMember } from "../services/memberStats.js";
+import { buildActivityFeed } from "../services/studioViewService.js";
+import { applyBookingToVisitTrend, enrichMember, groupBookingsByMember } from "../services/memberStats.js";
+import { computeChurnRatePct } from "../services/metricsService.js";
+import { parseTime24 } from "../services/bookingService.js";
+import {
+  dateKeysForPastDays,
+  localDateKey,
+  studioDayName,
+} from "../utils/studioTimezone.js";
 import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
 
-const DAY_NAMES = [
-  "sunday",
-  "monday",
-  "tuesday",
-  "wednesday",
-  "thursday",
-  "friday",
-  "saturday",
-];
+const FILLED_BOOKING_STATUSES = ["booked", "confirmed"];
+
+function minutesFromTime24(time24) {
+  const { hours, minutes } = parseTime24(time24);
+  return hours * 60 + minutes;
+}
+
+function isUnderBookedToday({ booked, capacity }) {
+  return capacity > 0 && booked > 0 && booked / capacity < 0.5;
+}
 
 function formatTime(time24) {
   const [hStr, mStr] = time24.split(":");
@@ -39,8 +48,8 @@ export async function getHomeDashboard(req, res, next) {
   try {
     const filter = ownerFilter(getOwnerUid(req));
     const now = Date.now();
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const todayDow = DAY_NAMES[new Date().getDay()];
+    const todayKey = localDateKey();
+    const todayDow = studioDayName();
 
     const [members, bookings, classes, messages] = await Promise.all([
       Member.find(filter),
@@ -57,9 +66,7 @@ export async function getHomeDashboard(req, res, next) {
     const attendanceRate = bookings.length
       ? Math.round((attendedCount / bookings.length) * 100)
       : 0;
-    const churnRate = members.length
-      ? Math.round((members.filter((m) => m.status === "lapsed").length / members.length) * 1000) / 10
-      : 0;
+    const churnRate = computeChurnRatePct(members, byMember);
 
     const tierMrr = { basic: 79, premium: 129, unlimited: 189 };
     const mrr = members
@@ -85,17 +92,9 @@ export async function getHomeDashboard(req, res, next) {
       },
     ];
 
-    const dateMap = {};
-    for (let i = 29; i >= 0; i--) {
-      const key = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
-      dateMap[key] = { visits: 0, noShows: 0 };
-    }
+    const dateMap = Object.fromEntries(dateKeysForPastDays(30).map((key) => [key, { visits: 0, noShows: 0 }]));
     for (const b of bookings) {
-      const key = new Date(b.bookedAt).toISOString().slice(0, 10);
-      if (key in dateMap) {
-        if (b.attended) dateMap[key].visits++;
-        else dateMap[key].noShows++;
-      }
+      applyBookingToVisitTrend(dateMap, b, now);
     }
     const visitsTrend = Object.entries(dateMap).map(([date, counts], i) => ({
       d: `D${i + 1}`,
@@ -103,52 +102,74 @@ export async function getHomeDashboard(req, res, next) {
       noShows: counts.noShows,
     }));
 
-    const todayClassesRaw = classes.filter((c) => c.dayOfWeek === todayDow);
+    const todayClassesRaw = classes
+      .filter((c) => c.dayOfWeek === todayDow)
+      .sort((a, b) => minutesFromTime24(a.time) - minutesFromTime24(b.time));
     const todayClasses = todayClassesRaw.map((c) => {
       const classBookings = bookings.filter(
         (b) =>
           String(b.classId?._id ?? b.classId) === String(c._id) &&
-          new Date(b.bookedAt).toISOString().slice(0, 10) === todayKey
+          localDateKey(b.bookedAt) === todayKey &&
+          b.status !== "cancelled"
       );
-      const booked = classBookings.length;
+      const booked = classBookings.filter((b) => FILLED_BOOKING_STATUSES.includes(b.status)).length;
+      const waitlist = classBookings.filter((b) => b.status === "waitlisted").length;
       return {
         id: String(c._id),
         name: c.name,
+        time24: c.time,
         time: formatTime(c.time),
         instructor: c.instructor,
         booked,
         capacity: c.capacity,
-        waitlist: Math.max(0, booked - c.capacity),
+        waitlist,
       };
     });
 
-    const underBooked = todayClasses.filter((c) => c.booked / c.capacity < 0.5);
+    const underBooked = todayClasses.filter(isUnderBookedToday);
+    const waitlistedClasses = todayClasses.filter((c) => c.waitlist > 0);
+    const waitlistTotal = waitlistedClasses.reduce((sum, c) => sum + c.waitlist, 0);
     const newMembers = members.filter((m) => m.status === "new");
 
     const actionItems = [
-      {
-        id: "a1",
-        title: `${atRiskMembers.length} at-risk clients need outreach this week`,
-        subtitle: "Sorted by engagement — highest value first",
-        cta: "Open at-risk list",
-        route: "/clients",
-      },
+      ...(atRiskMembers.length > 0
+        ? [
+            {
+              id: "a1",
+              title: `${atRiskMembers.length} at-risk client${atRiskMembers.length === 1 ? "" : "s"} need outreach this week`,
+              subtitle: "Sorted by engagement — highest value first",
+              cta: "Open at-risk list",
+              route: "/clients",
+            },
+          ]
+        : []),
       ...(underBooked.length
         ? [
             {
               id: "a2",
-              title: `${underBooked.length} classes under 50% full today`,
-              subtitle: underBooked.map((c) => c.name).join(", "),
+              title: `${underBooked.length} class${underBooked.length === 1 ? "" : "es"} under 50% full today`,
+              subtitle: underBooked.map((c) => `${c.name} (${c.time})`).join(" · "),
               cta: "View schedule",
-              route: "/analytics",
+              route: "/schedule",
             },
           ]
         : []),
-      ...(newMembers.length
+      ...(waitlistTotal > 0
+        ? [
+            {
+              id: "a-waitlist",
+              title: `${waitlistTotal} client${waitlistTotal === 1 ? "" : "s"} on waitlists today`,
+              subtitle: waitlistedClasses.map((c) => `${c.name} (+${c.waitlist})`).join(" · "),
+              cta: "Manage waitlists",
+              route: "/schedule",
+            },
+          ]
+        : []),
+      ...(newMembers.length > 0
         ? [
             {
               id: "a3",
-              title: `${newMembers.length} new members joined recently`,
+              title: `${newMembers.length} new member${newMembers.length === 1 ? "" : "s"} joined recently`,
               subtitle: "Review welcome messages and first bookings",
               cta: "Review queue",
               route: "/communications",
@@ -164,38 +185,7 @@ export async function getHomeDashboard(req, res, next) {
       },
     ];
 
-    const recentBookings = [...bookings]
-      .sort((a, b) => new Date(b.bookedAt) - new Date(a.bookedAt))
-      .slice(0, 6)
-      .map((b) => ({
-        id: String(b._id),
-        type: b.attended ? "booking" : "cancel",
-        text: b.attended
-          ? `${b.memberId?.name ?? "Member"} booked ${b.classId?.name ?? "a class"}`
-          : `${b.memberId?.name ?? "Member"} missed ${b.classId?.name ?? "a class"}`,
-        time: relativeTime(b.bookedAt),
-      }));
-
-    const recentSignups = members
-      .filter((m) => (now - new Date(m.joinDate).getTime()) / 86_400_000 <= 7)
-      .slice(0, 3)
-      .map((m) => ({
-        id: String(m._id),
-        type: "signup",
-        text: `New signup: ${m.name}`,
-        time: relativeTime(m.joinDate),
-      }));
-
-    const recentMessages = messages.slice(0, 4).map((m) => ({
-      id: String(m._id),
-      type: "reply",
-      text: `Outreach sent to ${m.memberId?.name ?? "member"} (${m.type})`,
-      time: relativeTime(m.sentAt),
-    }));
-
-    const activityFeed = [...recentBookings, ...recentSignups, ...recentMessages]
-      .sort((a, b) => 0)
-      .slice(0, 9);
+    const activityFeed = buildActivityFeed({ bookings, members, messages, now });
 
     res.json({
       studio: {

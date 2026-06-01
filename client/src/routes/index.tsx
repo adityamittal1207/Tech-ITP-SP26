@@ -140,10 +140,12 @@ function Home() {
             }
           />
           <div className="space-y-2">
-            {TODAY_CLASSES.map((c) => {
-              const pct = c.booked / c.capacity;
-              const under = pct < 0.5;
-              return (
+            {[...TODAY_CLASSES]
+              .sort((a, b) => (a.time24 ?? "").localeCompare(b.time24 ?? ""))
+              .map((c) => {
+                const pct = c.capacity > 0 ? c.booked / c.capacity : 0;
+                const under = c.booked > 0 && pct < 0.5;
+                return (
                 <Link
                   key={c.id}
                   to="/schedule"
@@ -178,8 +180,8 @@ function Home() {
                     </div>
                   </div>
                 </Link>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
 
