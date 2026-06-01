@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Check, Plug, Mail, Phone, Sliders, Upload, Download } from "lucide-react";
+import { Check, Copy, Link2, Plug, Mail, Phone, Sliders, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings")({
@@ -58,7 +58,9 @@ function SettingsPage() {
   if (isLoading) return <PageLoader />;
   if (isError || !data) return <PageError message={error?.message ?? "Failed to load settings"} />;
 
-  const { studio, retention, integrations, lastImport, exportGuides } = data;
+  const { studio, retention, integrations, lastImport, exportGuides, booking } = data;
+  const [slugDraft, setSlugDraft] = useState(booking.slug);
+  const [publicEnabled, setPublicEnabled] = useState(booking.publicBookingEnabled);
 
   const handleFile = (source: ImportSource, kind: ImportKind, file: File | undefined) => {
     if (!file) return;
@@ -142,6 +144,63 @@ function SettingsPage() {
         </p>
       )}
       {importResult && <p className="text-sm text-success -mt-2">{importResult}</p>}
+
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-soft space-y-4">
+        <SectionTitle
+          title="Public booking link"
+          subtitle="Members book classes without logging in — share this link on your site or social"
+        />
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={publicEnabled}
+            onChange={(e) => setPublicEnabled(e.target.checked)}
+            className="rounded border-border"
+          />
+          Enable public booking
+        </label>
+        <div>
+          <label className="text-xs font-medium text-muted-foreground">URL slug</label>
+          <input
+            value={slugDraft}
+            onChange={(e) => setSlugDraft(e.target.value)}
+            placeholder="tether-encinitas"
+            className="mt-1 w-full rounded-lg border border-border px-3 py-2 text-sm"
+          />
+        </div>
+        {booking.bookingUrl && publicEnabled && slugDraft && (
+          <div className="flex items-center gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs">
+            <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="truncate flex-1">{booking.bookingUrl.replace(booking.slug, slugDraft)}</span>
+            <button
+              type="button"
+              className="shrink-0 inline-flex items-center gap-1 text-primary font-medium"
+              onClick={() => {
+                const url = booking.bookingUrl!.replace(`/book/${booking.slug}`, `/book/${slugDraft}`);
+                void navigator.clipboard.writeText(url);
+                toast.success("Link copied");
+              }}
+            >
+              <Copy className="h-3.5 w-3.5" /> Copy
+            </button>
+          </div>
+        )}
+        <Button
+          type="button"
+          disabled={updateSettings.isPending}
+          onClick={() =>
+            updateSettings.mutate(
+              { bookingSlug: slugDraft, publicBookingEnabled: publicEnabled },
+              {
+                onSuccess: () => toast.success("Booking settings saved"),
+                onError: (err) => toast.error(err.message),
+              }
+            )
+          }
+        >
+          Save booking settings
+        </Button>
+      </div>
 
       <div className="rounded-2xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         <p className="font-medium text-foreground mb-1">How it works</p>

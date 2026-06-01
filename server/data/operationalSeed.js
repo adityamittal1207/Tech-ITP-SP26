@@ -1,4 +1,12 @@
+import { resolveOccurrenceDateTime, localDateKey } from "../services/bookingService.js";
+
 const daysAgo = (n) => new Date(Date.now() - n * 86_400_000);
+
+/** Align booking datetime to the class's scheduled day/time on the calendar date of `offset` days ago. */
+function bookedAtForClass(cls, offsetDays) {
+  const ref = daysAgo(offsetDays);
+  return resolveOccurrenceDateTime(cls, localDateKey(ref));
+}
 
 let seed = 42;
 const rand = () => {
@@ -173,11 +181,14 @@ export function buildBookings(memberProfiles, classes) {
   const bookings = [];
   memberProfiles.forEach((profile, memberIdx) => {
     profile.bookingOffsets.forEach((offset, bookingIdx) => {
+      const classIdx = classIndexFor(memberIdx, bookingIdx, classes);
       bookings.push({
         memberIdx,
-        classIdx: classIndexFor(memberIdx, bookingIdx, classes),
-        bookedAt: daysAgo(offset),
+        classIdx,
+        bookedAt: bookedAtForClass(classes[classIdx], offset),
         attended: rand() > 0.2,
+        status: rand() > 0.85 ? "confirmed" : "booked",
+        source: "import",
       });
     });
   });
@@ -191,11 +202,14 @@ export function buildSupplementalBookings(memberProfiles, classes) {
     const extraCount = 2 + Math.floor(rand() * 3);
     for (let i = 0; i < extraCount; i++) {
       const offset = 31 + Math.floor(rand() * 24);
+      const classIdx = classIndexFor(memberIdx, 20 + i, classes);
       bookings.push({
         memberIdx,
-        classIdx: classIndexFor(memberIdx, 20 + i, classes),
-        bookedAt: daysAgo(offset),
+        classIdx,
+        bookedAt: bookedAtForClass(classes[classIdx], offset),
         attended: rand() > 0.15,
+        status: "booked",
+        source: "import",
       });
     }
   });
@@ -213,10 +227,19 @@ export function buildTodayBookings(memberProfiles, classes) {
   const todayClasses = classes.filter((c) => c.dayOfWeek === todayDow);
   const bookings = [];
   let memberIdx = 0;
+  const usedSlots = new Set();
 
   for (const cls of todayClasses) {
+    const classIdx = classes.indexOf(cls);
     const targetBooked = Math.max(1, Math.floor(cls.capacity * (0.45 + rand() * 0.4)));
     for (let i = 0; i < targetBooked; i++) {
+      let mIdx = memberIdx++ % memberProfiles.length;
+      let slotKey = `${mIdx}:${classIdx}`;
+      while (usedSlots.has(slotKey)) {
+        mIdx = memberIdx++ % memberProfiles.length;
+        slotKey = `${mIdx}:${classIdx}`;
+      }
+      usedSlots.add(slotKey);
       const [hStr, mStr] = cls.time.split(":");
       const bookedAt = new Date(
         today.getFullYear(),
@@ -228,10 +251,69 @@ export function buildTodayBookings(memberProfiles, classes) {
         0
       );
       bookings.push({
-        memberIdx: memberIdx++ % memberProfiles.length,
-        classIdx: classes.indexOf(cls),
+        memberIdx: mIdx,
+        classIdx,
         bookedAt,
         attended: false,
+        status: i % 4 === 0 ? "confirmed" : "booked",
+        source: "staff",
+        reminderSent: i < 3,
+      });
+    }
+    const waitlistCount = Math.max(1, Math.floor(cls.capacity * 0.12));
+    for (let w = 0; w < waitlistCount; w++) {
+      const [hStr, mStr] = cls.time.split(":");
+      const bookedAt = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        Number(hStr),
+        Number(mStr),
+        0,
+        0
+      );
+      let mIdx = memberIdx++ % memberProfiles.length;
+      let slotKey = `${mIdx}:${classIdx}`;
+      while (usedSlots.has(slotKey)) {
+        mIdx = memberIdx++ % memberProfiles.length;
+        slotKey = `${mIdx}:${classIdx}`;
+      }
+      usedSlots.add(slotKey);
+      bookings.push({
+        memberIdx: mIdx,
+        classIdx,
+        bookedAt,
+        attended: false,
+        status: "waitlisted",
+        source: "public",
+      });
+    }
+  }
+  return bookings;
+}
+
+/** Tomorrow's classes — powers reminder / SMS reply demo on home activity feed. */
+export function buildTomorrowBookings(memberProfiles, classes) {
+  const tomorrow = new Date(Date.now() + 86_400_000);
+  const tomorrowDow = DAY_NAMES[tomorrow.getDay()];
+  const tomorrowClasses = classes.filter((c) => c.dayOfWeek === tomorrowDow);
+  const dateKey = localDateKey(tomorrow);
+  const bookings = [];
+  let memberIdx = 0;
+
+  for (const cls of tomorrowClasses.slice(0, 4)) {
+    const occurrence = resolveOccurrenceDateTime(cls, dateKey);
+    const count = Math.min(3, Math.floor(cls.capacity * 0.35));
+    for (let i = 0; i < count; i++) {
+      bookings.push({
+        memberIdx: memberIdx++ % memberProfiles.length,
+        classIdx: classes.indexOf(cls),
+        bookedAt: occurrence,
+        attended: false,
+        status: i === 0 ? "confirmed" : "booked",
+        source: i === 1 ? "public" : "staff",
+        reminderSent: true,
+        confirmedAt: i === 0 ? new Date() : undefined,
       });
     }
   }

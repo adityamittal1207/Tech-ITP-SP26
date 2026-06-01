@@ -2,6 +2,15 @@ import Booking from "../models/Booking.js";
 import { sendTemplate } from "../services/messageService.js";
 import { getOwnerUid, ownerFilter } from "../utils/tenant.js";
 
+function formatTime12(time24) {
+  const [hStr, mStr] = time24.split(":");
+  const h = Number(hStr);
+  const m = Number(mStr);
+  const suffix = h < 12 ? "AM" : "PM";
+  const hour = ((h + 11) % 12) + 1;
+  return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
 export async function sendReminder(req, res, next) {
   try {
     const { bookingId } = req.body;
@@ -12,14 +21,23 @@ export async function sendReminder(req, res, next) {
       .populate("classId", "name time dayOfWeek");
 
     if (!booking) return res.status(404).json({ message: "Booking not found" });
-    if (booking.reminderSent) return res.status(400).json({ message: "Reminder already sent for this booking" });
+    if (booking.status === "cancelled") {
+      return res.status(400).json({ message: "Cannot remind cancelled booking" });
+    }
 
     try {
-      const message = await sendTemplate(booking.memberId._id, "reminder", {
-        className: booking.classId.name,
-        classTime: booking.classId.time,
-      });
+      const message = await sendTemplate(
+        booking.memberId._id,
+        "reminder",
+        {
+          className: booking.classId.name,
+          classTime: formatTime12(booking.classId.time),
+        },
+        undefined,
+        { bookingId: booking._id }
+      );
       booking.reminderSent = true;
+      booking.reminderSentAt = new Date();
       await booking.save();
       res.json({ success: true, message });
     } catch (smsErr) {

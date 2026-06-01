@@ -1,4 +1,5 @@
 import config from "../config/businessConfig.js";
+import { daysSinceTimestamp, getLastVisitMs } from "./memberStats.js";
 
 export function computeStatus(member, bookings, now = Date.now()) {
   const daysSinceJoin = (now - new Date(member.joinDate)) / 86_400_000;
@@ -7,16 +8,12 @@ export function computeStatus(member, bookings, now = Date.now()) {
     return "new";
   }
 
-  if (!bookings || bookings.length === 0) {
+  const lastVisitMs = getLastVisitMs(bookings ?? [], now);
+  if (lastVisitMs == null) {
     return "lapsed";
   }
 
-  const lastBookedAt = bookings.reduce((latest, b) => {
-    const d = new Date(b.bookedAt).getTime();
-    return d > latest ? d : latest;
-  }, 0);
-
-  const daysSinceLastBooking = (now - lastBookedAt) / 86_400_000;
+  const daysSinceLastBooking = daysSinceTimestamp(lastVisitMs, now);
 
   if (daysSinceLastBooking > config.retention.daysUntilLapsed) {
     return "lapsed";

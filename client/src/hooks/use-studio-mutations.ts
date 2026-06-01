@@ -25,6 +25,8 @@ export function useSendOutreach() {
 
 export type SettingsPatch = {
   smsTemplates?: Record<string, string>;
+  bookingSlug?: string;
+  publicBookingEnabled?: boolean;
   retention?: {
     newMemberDays?: number;
     daysUntilAtRisk?: number;
@@ -77,5 +79,73 @@ export function useImportCsv() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["studio"] });
     },
+  });
+}
+
+function invalidateBookingQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ["studio"] });
+  queryClient.invalidateQueries({ queryKey: ["schedule"] });
+}
+
+export function useCreateBooking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { memberId: string; classId: string; occurrenceDate: string }) =>
+      apiRequest("/bookings", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useCancelBooking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest(`/bookings/${id}/cancel`, { method: "POST" }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useConfirmBooking() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest(`/bookings/${id}/confirm`, { method: "POST" }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useMarkAttended() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, attended }: { id: string; attended: boolean }) =>
+      apiRequest(`/bookings/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ attended }),
+      }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useSendReminder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (bookingId: string) =>
+      apiRequest("/sms/reminder", { method: "POST", body: JSON.stringify({ bookingId }) }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useCreateClass() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      apiRequest("/classes", { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
+  });
+}
+
+export function useDeleteClass() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiRequest(`/classes/${id}`, { method: "DELETE" }),
+    onSuccess: () => invalidateBookingQueries(queryClient),
   });
 }

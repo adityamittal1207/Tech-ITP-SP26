@@ -11,7 +11,7 @@ export async function getMembers(req, res, next) {
     const filter = ownerFilter(getOwnerUid(req));
     const [members, bookings] = await Promise.all([
       Member.find(filter).sort({ createdAt: -1 }),
-      Booking.find(filter, { memberId: 1, bookedAt: 1, attended: 1 }),
+      Booking.find(filter, { memberId: 1, bookedAt: 1, attended: 1, status: 1 }),
     ]);
     const byMember = groupBookingsByMember(bookings);
     res.json(
@@ -28,7 +28,7 @@ export async function getMember(req, res, next) {
     const member = await Member.findOne({ _id: req.params.id, ownerUid });
     if (!member) return res.status(404).json({ message: "Member not found" });
     const [bookings, messages] = await Promise.all([
-      Booking.find({ ownerUid, memberId: member._id }, { memberId: 1, bookedAt: 1, attended: 1 }).sort({
+      Booking.find({ ownerUid, memberId: member._id }, { memberId: 1, bookedAt: 1, attended: 1, status: 1 }).sort({
         bookedAt: -1,
       }),
       Message.find({ ownerUid, memberId: member._id }).sort({ sentAt: -1 }).limit(10),

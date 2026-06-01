@@ -31,11 +31,24 @@ const studioSettingsSchema = new mongoose.Schema(
       winback: String,
       milestone: String,
       welcome: String,
+      confirmAck: String,
+      cancelAck: String,
+    },
+    bookingSlug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      sparse: true,
+    },
+    publicBookingEnabled: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true }
 );
 
 studioSettingsSchema.index({ ownerUid: 1, key: 1 }, { unique: true });
+studioSettingsSchema.index({ bookingSlug: 1 }, { unique: true, sparse: true });
 
 export default mongoose.model("StudioSettings", studioSettingsSchema);

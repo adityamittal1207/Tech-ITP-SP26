@@ -175,6 +175,9 @@ export async function importBookings(csvText, ownerUid) {
           classId: cls._id,
           bookedAt,
           attended,
+          status: "booked",
+          source: "import",
+          externalSource: "native",
         });
         imported++;
       }

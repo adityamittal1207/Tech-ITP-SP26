@@ -42,7 +42,8 @@ export const METRIC_EXPLANATIONS: Record<string, string> = {
   // Client metrics
   LTV: "Lifetime value estimate: attended visits × revenue per visit for the member's membership tier.",
   "90-day visits": "Count of attended bookings in the last 90 days for this member.",
-  "Last visit": "Days since the member's most recent booking date.",
+  "Last visit":
+    "Days since the member's most recent class — uses their latest attended visit, or the latest past booking if attendance hasn't been marked yet. Future bookings are excluded.",
   "Why at risk": "From retention scoring — typically days since last visit crossed your at-risk threshold.",
 
   // Cohort

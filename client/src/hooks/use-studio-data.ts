@@ -77,6 +77,11 @@ export function useSettingsPage() {
             errors: string[];
           };
         } | null;
+        booking: {
+          slug: string;
+          publicBookingEnabled: boolean;
+          bookingUrl: string | null;
+        };
       }>("/studio/settings"),
   });
 }

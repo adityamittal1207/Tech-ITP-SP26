@@ -5,7 +5,7 @@ import Class from "../models/Class.js";
 import Member from "../models/Member.js";
 import Message from "../models/Message.js";
 import SyncLog from "../models/SyncLog.js";
-import { enrichMember, groupBookingsByMember } from "./memberStats.js";
+import { enrichMember, groupBookingsByMember, isPastBooking } from "./memberStats.js";
 import { EXPORT_GUIDES } from "./importService.js";
 import {
   attendanceByMonth,
@@ -141,9 +141,9 @@ function dayToShort(dayOfWeek) {
 }
 
 function isWinBack(bookings, now = Date.now()) {
-  const sorted = [...bookings].sort(
-    (a, b) => new Date(b.bookedAt).getTime() - new Date(a.bookedAt).getTime()
-  );
+  const sorted = bookings
+    .filter((b) => isPastBooking(b, now))
+    .sort((a, b) => new Date(b.bookedAt).getTime() - new Date(a.bookedAt).getTime());
   if (sorted.length < 2) return false;
   const latest = new Date(sorted[0].bookedAt).getTime();
   const prev = new Date(sorted[1].bookedAt).getTime();
@@ -250,9 +250,11 @@ export async function getHomePage(ownerUid) {
     const classBookings = bookings.filter(
       (b) =>
         String(b.classId?._id ?? b.classId) === String(c._id) &&
-        localDateKey(b.bookedAt) === todayKey
+        localDateKey(b.bookedAt) === todayKey &&
+        b.status !== "cancelled"
     );
-    const booked = classBookings.length;
+    const booked = classBookings.filter((b) => ["booked", "confirmed"].includes(b.status)).length;
+    const waitlisted = classBookings.filter((b) => b.status === "waitlisted").length;
     return {
       id: String(c._id),
       name: c.name,
@@ -260,7 +262,7 @@ export async function getHomePage(ownerUid) {
       instructor: c.instructor,
       booked,
       capacity: c.capacity,
-      waitlist: Math.max(0, booked - c.capacity),
+      waitlist: waitlisted,
     };
   });
 
@@ -281,7 +283,7 @@ export async function getHomePage(ownerUid) {
           title: `${underBooked.length} classes under 50% full today`,
           subtitle: underBooked.map((c) => c.name).join(", "),
           cta: "View schedule",
-          route: "/analytics",
+          route: "/schedule",
         }]
       : []),
     ...(newMembers.length
@@ -324,12 +326,28 @@ export async function getHomePage(ownerUid) {
       time: relativeTime(m.joinDate),
     }));
 
-  const recentMessages = messages.slice(0, 4).map((m) => ({
-    id: String(m._id),
-    type: "reply",
-    text: `Outreach sent to ${m.memberId?.name ?? "member"} (${m.type})`,
-    time: relativeTime(m.sentAt),
-  }));
+  const recentMessages = messages.slice(0, 6).map((m) => {
+    if (m.direction === "inbound") {
+      const action =
+        m.replyKeyword === "confirm"
+          ? "confirmed"
+          : m.replyKeyword === "cancel"
+            ? "cancelled"
+            : "replied";
+      return {
+        id: String(m._id),
+        type: "reply",
+        text: `${m.memberId?.name ?? "Member"} ${action} via SMS`,
+        time: relativeTime(m.sentAt),
+      };
+    }
+    return {
+      id: String(m._id),
+      type: "sms",
+      text: `${m.type} SMS to ${m.memberId?.name ?? "member"}`,
+      time: relativeTime(m.sentAt),
+    };
+  });
 
   const activityFeed = [...recentBookings, ...recentSignups, ...recentMessages].slice(0, 9);
 
@@ -646,6 +664,13 @@ export async function getSettingsPage(ownerUid) {
       },
     ],
     exportGuides: EXPORT_GUIDES,
+    booking: {
+      slug: config.bookingSlug || "",
+      publicBookingEnabled: config.publicBookingEnabled,
+      bookingUrl: config.bookingSlug
+        ? `${process.env.CLIENT_URL || "http://localhost:5173"}/book/${config.bookingSlug}`
+        : null,
+    },
     lastImport: lastImport
       ? { ranAt: lastImport.ranAt, summary: lastImport.summary }
       : null,

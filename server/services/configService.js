@@ -8,7 +8,7 @@ export const DEFAULT_REMINDER_TIMING = [
   { id: "rt3", name: "Weekend classes", firstReminder: "24h before", secondReminder: "2h before", note: "" },
 ];
 
-const SMS_TEMPLATE_KEYS = ["reminder", "atRisk", "winback", "milestone", "welcome"];
+const SMS_TEMPLATE_KEYS = ["reminder", "atRisk", "winback", "milestone", "welcome", "confirmAck", "cancelAck"];
 
 export function buildDefaultSettings(ownerUid) {
   return {
@@ -18,6 +18,8 @@ export function buildDefaultSettings(ownerUid) {
     studioOwner: businessConfig.studioOwner,
     city: "Encinitas, CA",
     replyToEmail: "hi@tether.studio",
+    bookingSlug: "tether-encinitas",
+    publicBookingEnabled: true,
     retention: { ...businessConfig.retention },
     reminderTiming: DEFAULT_REMINDER_TIMING.map((r) => ({ ...r })),
     smsTemplates: { ...businessConfig.smsTemplates },
@@ -64,6 +66,8 @@ export async function getEffectiveConfig(ownerUid) {
       retention: defaults.retention,
       reminderTiming: defaults.reminderTiming,
       smsTemplates: mergeSmsTemplates(null),
+      bookingSlug: defaults.bookingSlug,
+      publicBookingEnabled: defaults.publicBookingEnabled,
       membershipTiers: businessConfig.membershipTiers,
       classCategories: businessConfig.classCategories,
     };
@@ -81,6 +85,8 @@ export async function getEffectiveConfig(ownerUid) {
     },
     reminderTiming: doc.reminderTiming?.length ? doc.reminderTiming : defaults.reminderTiming,
     smsTemplates: mergeSmsTemplates(doc.smsTemplates),
+    bookingSlug: doc.bookingSlug ?? defaults.bookingSlug,
+    publicBookingEnabled: doc.publicBookingEnabled ?? defaults.publicBookingEnabled,
     membershipTiers: businessConfig.membershipTiers,
     classCategories: businessConfig.classCategories,
   };
@@ -126,6 +132,26 @@ export async function updateSettings(ownerUid, patch) {
     base.smsTemplates = mergeSmsTemplates({ ...base.smsTemplates, ...patch.smsTemplates });
   }
 
+  if (patch.bookingSlug != null) {
+    const slug = String(patch.bookingSlug).trim().toLowerCase().replace(/[^a-z0-9-]/g, "-");
+    if (slug) {
+      const taken = await StudioSettings.findOne({
+        bookingSlug: slug,
+        ownerUid: { $ne: ownerUid },
+      });
+      if (taken) {
+        throw Object.assign(new Error("Booking slug already in use"), { status: 409 });
+      }
+      base.bookingSlug = slug;
+    } else {
+      base.bookingSlug = "";
+    }
+  }
+
+  if (patch.publicBookingEnabled != null) {
+    base.publicBookingEnabled = Boolean(patch.publicBookingEnabled);
+  }
+
   const doc = await StudioSettings.findOneAndUpdate(
     { ownerUid, key: "main" },
     {
@@ -138,6 +164,8 @@ export async function updateSettings(ownerUid, patch) {
       retention: base.retention,
       reminderTiming: base.reminderTiming,
       smsTemplates: base.smsTemplates,
+      bookingSlug: base.bookingSlug,
+      publicBookingEnabled: base.publicBookingEnabled,
     },
     { upsert: true, new: true }
   );

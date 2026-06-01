@@ -1,9 +1,53 @@
 const MEMBERSHIP_LTV = { basic: 15, premium: 28, unlimited: 45 };
+const MS_PER_DAY = 86_400_000;
+
+export function bookingVisitMs(booking) {
+  return new Date(booking.bookedAt).getTime();
+}
+
+export function bookingMemberId(booking) {
+  const mid = booking.memberId;
+  if (mid == null) return null;
+  if (typeof mid === "object" && mid._id != null) return String(mid._id);
+  return String(mid);
+}
+
+/** Counts toward visit stats — staff-marked attendance always counts. */
+export function isPastBooking(booking, now = Date.now()) {
+  if (booking.status === "cancelled") return false;
+  if (booking.attended) return true;
+  return bookingVisitMs(booking) <= now;
+}
+
+/**
+ * Most recent visit timestamp: latest attended past session, else latest past booking.
+ * Ignores future bookings so scheduling ahead does not reset "last visit".
+ */
+export function getLastVisitMs(bookings = [], now = Date.now()) {
+  let lastAttended = null;
+  let lastPast = null;
+
+  for (const b of bookings) {
+    if (!isPastBooking(b, now)) continue;
+    const ms = bookingVisitMs(b);
+    lastPast = lastPast == null ? ms : Math.max(lastPast, ms);
+    if (b.attended) {
+      lastAttended = lastAttended == null ? ms : Math.max(lastAttended, ms);
+    }
+  }
+
+  return lastAttended ?? lastPast;
+}
+
+export function daysSinceTimestamp(timestampMs, now = Date.now()) {
+  return Math.max(0, Math.floor((now - timestampMs) / MS_PER_DAY));
+}
 
 export function groupBookingsByMember(bookings) {
   const map = {};
   for (const b of bookings) {
-    const id = String(b.memberId);
+    const id = bookingMemberId(b);
+    if (!id) continue;
     (map[id] ??= []).push(b);
   }
   return map;
@@ -11,25 +55,25 @@ export function groupBookingsByMember(bookings) {
 
 export function enrichMember(member, bookings = [], now = Date.now()) {
   const doc = member.toObject ? member.toObject() : { ...member };
-  const ninetyDaysAgo = now - 90 * 86_400_000;
-  const visits90 = bookings.filter(
-    (b) => new Date(b.bookedAt).getTime() >= ninetyDaysAgo
-  ).length;
-  const attended = bookings.filter((b) => b.attended).length;
+  const ninetyDaysAgo = now - 90 * MS_PER_DAY;
 
-  const lastBookedAt = bookings.length
-    ? Math.max(...bookings.map((b) => new Date(b.bookedAt).getTime()))
-    : null;
+  const visits90 = bookings.filter(
+    (b) =>
+      b.attended &&
+      isPastBooking(b, now) &&
+      bookingVisitMs(b) >= ninetyDaysAgo
+  ).length;
+
+  const attended = bookings.filter((b) => b.attended && isPastBooking(b, now)).length;
+
+  const lastVisitMs = getLastVisitMs(bookings, now);
   const daysSinceJoin = Math.max(
     0,
-    Math.floor((now - new Date(doc.joinDate).getTime()) / 86_400_000)
+    Math.floor((now - new Date(doc.joinDate).getTime()) / MS_PER_DAY)
   );
-  // For members with no bookings, use a realistic inactivity value tied to tenure.
   const estimatedNoBookingGap = Math.min(Math.max(daysSinceJoin, 28), 180);
   const daysSinceLast =
-    lastBookedAt != null
-      ? Math.floor((now - lastBookedAt) / 86_400_000)
-      : estimatedNoBookingGap;
+    lastVisitMs != null ? daysSinceTimestamp(lastVisitMs, now) : estimatedNoBookingGap;
 
   const ltv = Math.round(attended * (MEMBERSHIP_LTV[doc.membershipType] || 20));
 
@@ -42,6 +86,7 @@ export function enrichMember(member, bookings = [], now = Date.now()) {
     ...doc,
     visits90,
     daysSinceLast,
+    lastVisitAt: lastVisitMs != null ? new Date(lastVisitMs).toISOString() : null,
     ltv,
     reason,
   };

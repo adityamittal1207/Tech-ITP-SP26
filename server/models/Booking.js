@@ -21,6 +21,13 @@ const bookingSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    status: {
+      type: String,
+      enum: ["booked", "confirmed", "cancelled", "waitlisted"],
+      default: "booked",
+    },
+    confirmedAt: Date,
+    cancelledAt: Date,
     attended: {
       type: Boolean,
       default: false,
@@ -28,6 +35,13 @@ const bookingSchema = new mongoose.Schema(
     reminderSent: {
       type: Boolean,
       default: false,
+    },
+    reminderSentAt: Date,
+    secondReminderSentAt: Date,
+    source: {
+      type: String,
+      enum: ["staff", "public", "import"],
+      default: "staff",
     },
     externalSource: {
       type: String,
@@ -42,5 +56,7 @@ const bookingSchema = new mongoose.Schema(
 );
 
 bookingSchema.index({ externalSource: 1, externalId: 1 }, { sparse: true });
+bookingSchema.index({ ownerUid: 1, memberId: 1, classId: 1, bookedAt: 1 }, { unique: true });
+bookingSchema.index({ ownerUid: 1, classId: 1, bookedAt: 1, status: 1 });
 
 export default mongoose.model("Booking", bookingSchema);

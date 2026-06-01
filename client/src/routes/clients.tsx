@@ -19,6 +19,12 @@ export const Route = createFileRoute("/clients")({
 
 const CHANNEL_OPTS = ["All", "Instagram", "Groupon", "Referral", "Walk-in"];
 
+function formatLastVisit(daysSinceLast: number) {
+  if (daysSinceLast === 0) return "Today";
+  if (daysSinceLast === 1) return "Yesterday";
+  return `${daysSinceLast}d ago`;
+}
+
 function StatusChip({ s }: { s: ClientStatus }) {
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", statusColor[s])}>
@@ -222,7 +228,7 @@ function ClientsPage() {
                   <td className="py-2.5 text-muted-foreground">{c.membership}</td>
                   <td className="py-2.5 text-muted-foreground">{c.joinSource}</td>
                   <td className="py-2.5">{c.visits90}</td>
-                  <td className="py-2.5 text-muted-foreground">{c.daysSinceLast}d ago</td>
+                  <td className="py-2.5 text-muted-foreground">{formatLastVisit(c.daysSinceLast)}</td>
                   <td className="py-2.5 text-right font-medium">${c.ltv.toLocaleString()}</td>
                 </tr>
               ))}
@@ -348,7 +354,7 @@ function ClientDrawer({
           <div className="grid grid-cols-3 gap-3">
             <Stat label="LTV" metric="LTV" value={`$${client.ltv.toLocaleString()}`} />
             <Stat label="90-day visits" metric="90-day visits" value={String(client.visits90)} />
-            <Stat label="Last visit" metric="Last visit" value={`${client.daysSinceLast}d`} />
+            <Stat label="Last visit" metric="Last visit" value={formatLastVisit(client.daysSinceLast)} />
           </div>
 
           <div>

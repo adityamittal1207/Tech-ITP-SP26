@@ -3,6 +3,7 @@ import {
   Home,
   Users,
   BarChart3,
+  Calendar,
   MessageSquare,
   Settings,
   Waves,
@@ -21,6 +22,7 @@ import { cn } from "@/lib/utils";
 const nav = [
   { to: "/", label: "Home", icon: Home, exact: true },
   { to: "/clients", label: "Clients & Retention", icon: Users },
+  { to: "/schedule", label: "Schedule", icon: Calendar },
   { to: "/analytics", label: "Class & Revenue", icon: BarChart3 },
   { to: "/communications", label: "Communications", icon: MessageSquare },
   { to: "/settings", label: "Settings", icon: Settings },

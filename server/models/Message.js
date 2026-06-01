@@ -12,9 +12,18 @@ const messageSchema = new mongoose.Schema(
       ref: "Member",
       required: [true, "Member is required"],
     },
+    bookingId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Booking",
+    },
+    direction: {
+      type: String,
+      enum: ["outbound", "inbound"],
+      default: "outbound",
+    },
     type: {
       type: String,
-      enum: ["reminder", "atRisk", "winback", "welcome", "milestone"],
+      enum: ["reminder", "atRisk", "winback", "welcome", "milestone", "confirmAck", "cancelAck"],
       required: [true, "Type is required"],
     },
     templateUsed: {
@@ -24,13 +33,17 @@ const messageSchema = new mongoose.Schema(
       type: String,
       required: [true, "Body is required"],
     },
+    replyKeyword: {
+      type: String,
+      enum: ["confirm", "cancel", "unknown"],
+    },
     sentAt: {
       type: Date,
       default: Date.now,
     },
     status: {
       type: String,
-      enum: ["sent", "failed", "delivered"],
+      enum: ["sent", "failed", "delivered", "received"],
       default: "sent",
     },
   },

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
-  createBooking,
+  cancelBookingHandler,
+  confirmBookingHandler,
+  createBookingHandler,
   deleteBooking,
   getBooking,
   getBookings,
@@ -9,7 +11,9 @@ import {
 
 const router = Router();
 
-router.route("/").get(getBookings).post(createBooking);
+router.route("/").get(getBookings).post(createBookingHandler);
+router.post("/:id/cancel", cancelBookingHandler);
+router.post("/:id/confirm", confirmBookingHandler);
 router.route("/:id").get(getBooking).put(updateBooking).delete(deleteBooking);
 
 export default router;

@@ -148,3 +148,15 @@
     letter-spacing: -0.01em;
   }
 }
+
+@layer components {
+  .interactive-card {
+    @apply transition-[background-color,border-color,transform,box-shadow] duration-150 ease-out;
+    @apply active:scale-[0.99] active:bg-muted/50 active:shadow-none;
+  }
+
+  .field-control {
+    @apply transition-[border-color,box-shadow] duration-150 ease-out;
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:border-ring/60;
+  }
+}

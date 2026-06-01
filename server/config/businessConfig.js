@@ -12,8 +12,18 @@ export default {
     daysUntilAtRisk: 14,
     daysUntilLapsed: 21,
   },
+  smsReplyKeywords: {
+    confirm: ["Y", "YES"],
+    cancel: ["C", "CANCEL", "N", "NO"],
+  },
+  reminderLeadTimes: {
+    firstHours: 24,
+    secondHours: 2,
+  },
   smsTemplates: {
-    reminder: "Hi {firstName}, reminder: {className} is tomorrow at {classTime}. See you there!",
+    reminder: "Hi {firstName}, reminder: {className} is {classTime}. Reply Y to confirm, C to cancel.",
+    confirmAck: "You're confirmed for {className} at {classTime}. See you there!",
+    cancelAck: "Your spot for {className} at {classTime} is cancelled. Reply anytime to rebook.",
     atRisk:   "Hi {firstName}, we've missed you! It's been a while since your last class. Come back and join us.",
     winback:  "Hi {firstName}, we haven't seen you in a while. We'd love to have you back — check the latest schedule and book your spot.",
     milestone: "Congrats, {firstName}! You've hit {visitCount} visits at Lumnus Studio. We love having you here.",

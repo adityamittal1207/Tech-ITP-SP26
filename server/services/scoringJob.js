@@ -6,7 +6,7 @@ export async function runRetentionScoring(ownerUid) {
   const filter = ownerUid ? { ownerUid } : {};
   const [members, bookings] = await Promise.all([
     Member.find(filter),
-    Booking.find(filter, { memberId: 1, bookedAt: 1 }),
+    Booking.find({ ...filter, status: { $ne: "cancelled" } }, { memberId: 1, bookedAt: 1, attended: 1 }),
   ]);
 
   const byMember = {};

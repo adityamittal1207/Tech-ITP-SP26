@@ -7,8 +7,11 @@ import {
   buildBookings,
   buildSupplementalBookings,
   buildTodayBookings,
+  buildTomorrowBookings,
   generateOperationalSeed,
 } from "../data/operationalSeed.js";
+import businessConfig from "../config/businessConfig.js";
+import { getEffectiveConfig } from "./configService.js";
 import { runRetentionScoring } from "./scoringJob.js";
 import { seedDefaultSettings } from "./configService.js";
 
@@ -48,6 +51,16 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
   const { memberProfiles, memberDocs, classData } = generateOperationalSeed(memberCount);
 
   await seedDefaultSettings(ownerUid);
+  await StudioSettings.findOneAndUpdate(
+    { ownerUid, key: "main" },
+    {
+      $set: {
+        bookingSlug: "tether-encinitas",
+        publicBookingEnabled: true,
+      },
+    },
+    { upsert: true },
+  );
 
   const classes = await Class.insertMany(
     classData.map((doc) => ({ ...doc, ownerUid })),
@@ -61,27 +74,42 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
     })),
   );
 
-  const bookingSpecs = [
+  const seenBookingKeys = new Set();
+  const allSpecs = [
     ...buildBookings(memberProfiles, classes),
     ...buildSupplementalBookings(memberProfiles, classes),
     ...buildTodayBookings(memberProfiles, classes),
+    ...buildTomorrowBookings(memberProfiles, classes),
   ];
+  const bookingSpecs = allSpecs.filter((b) => {
+    const key = `${b.memberIdx}:${b.classIdx}:${b.bookedAt.getTime()}`;
+    if (seenBookingKeys.has(key)) return false;
+    seenBookingKeys.add(key);
+    return true;
+  });
   const thirtyDaysAgo = Date.now() - 30 * 86_400_000;
   let reminderToggle = 0;
 
   const bookingDocs = bookingSpecs.map((b) => {
     const bookedAt = b.bookedAt;
     const recent = bookedAt.getTime() >= thirtyDaysAgo;
+    const status = b.status ?? (b.attended ? "booked" : "booked");
+    const reminderSent = b.reminderSent ?? (recent ? reminderToggle++ % 2 === 0 : false);
     return {
       ownerUid,
       memberId: members[b.memberIdx]._id,
       classId: classes[b.classIdx]._id,
       bookedAt,
-      attended: b.attended,
-      reminderSent: recent ? reminderToggle++ % 2 === 0 : false,
+      status,
+      source: b.source ?? "import",
+      externalSource: "native",
+      attended: b.attended ?? false,
+      reminderSent,
+      reminderSentAt: reminderSent ? new Date(bookedAt.getTime() - 24 * 3_600_000) : undefined,
+      confirmedAt: status === "confirmed" ? new Date() : b.confirmedAt,
     };
   });
-  await Booking.insertMany(bookingDocs);
+  const insertedBookings = await Booking.insertMany(bookingDocs);
 
   await runRetentionScoring(ownerUid);
 
@@ -107,6 +135,7 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
       body: (SMS_BODIES[type] ?? SMS_BODIES.atRisk).replace("{name}", firstName),
       sentAt,
       status: "sent",
+      direction: "outbound",
     });
 
     if (i % 5 < 2) {
@@ -116,7 +145,52 @@ export async function seedTenant(ownerUid, { memberCount = 150 } = {}) {
         classId: classes[i % classes.length]._id,
         bookedAt: daysAgo(Math.max(1, sentDaysAgo - 2)),
         attended: true,
+        status: "confirmed",
+        source: "staff",
+        externalSource: "native",
         reminderSent: false,
+      });
+    }
+  }
+
+  const config = await getEffectiveConfig(ownerUid);
+  const reminderTemplate = config.smsTemplates?.reminder ?? businessConfig.smsTemplates.reminder;
+  const tomorrowBookings = insertedBookings.filter(
+    (b) => b.reminderSent && b.bookedAt > new Date()
+  );
+
+  for (const booking of tomorrowBookings.slice(0, 3)) {
+    const member = members.find((m) => String(m._id) === String(booking.memberId));
+    const cls = classes.find((c) => String(c._id) === String(booking.classId));
+    if (!member || !cls) continue;
+    const firstName = member.name.split(" ")[0];
+    const sentAt = booking.reminderSentAt ?? daysAgo(1);
+    messageDocs.push({
+      ownerUid,
+      memberId: member._id,
+      bookingId: booking._id,
+      type: "reminder",
+      templateUsed: "reminder",
+      body: reminderTemplate
+        .replace("{firstName}", firstName)
+        .replace("{className}", cls.name)
+        .replace("{classTime}", cls.time),
+      sentAt,
+      status: "sent",
+      direction: "outbound",
+    });
+    if (booking.status === "confirmed") {
+      messageDocs.push({
+        ownerUid,
+        memberId: member._id,
+        bookingId: booking._id,
+        type: "reminder",
+        templateUsed: null,
+        body: "Y",
+        sentAt: new Date(sentAt.getTime() + 360_000),
+        status: "received",
+        direction: "inbound",
+        replyKeyword: "confirm",
       });
     }
   }

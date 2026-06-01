@@ -91,12 +91,13 @@ function AuthenticatedLayout() {
   const { user, loading, isConfigured } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLoginRoute = pathname === "/login";
+  const isPublicBookRoute = pathname.startsWith("/book/");
 
   if (loading) {
     return <PageLoader label="Checking session…" />;
   }
 
-  if (isConfigured && !user && !isLoginRoute) {
+  if (isConfigured && !user && !isLoginRoute && !isPublicBookRoute) {
     return <Navigate to="/login" />;
   }
 
@@ -104,7 +105,7 @@ function AuthenticatedLayout() {
     return <Navigate to="/" />;
   }
 
-  if (isLoginRoute) {
+  if (isLoginRoute || isPublicBookRoute) {
     return <Outlet />;
   }
 

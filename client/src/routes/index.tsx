@@ -144,7 +144,12 @@ function Home() {
               const pct = c.booked / c.capacity;
               const under = pct < 0.5;
               return (
-                <div key={c.id} className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-3">
+                <Link
+                  key={c.id}
+                  to="/schedule"
+                  search={{ classId: c.id, date: "today" }}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-background/50 p-3 hover:bg-muted/40 transition-colors"
+                >
                   <div className="w-16 shrink-0">
                     <div className="text-sm font-semibold">{c.time}</div>
                   </div>
@@ -172,7 +177,7 @@ function Home() {
                       />
                     </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
