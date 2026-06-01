@@ -1,5 +1,6 @@
 export default {
-  studioName: "Lumnus Studio",
+  studioName: "Tether",
+  studioOwner: "Aditya Mittal",
   primaryColor: "#C8F135",
   classCategories: ["yoga", "pilates", "hiit", "spin", "strength"],
   membershipTiers: ["basic", "premium", "unlimited"],
@@ -15,7 +16,7 @@ export default {
     reminder: "Hi {firstName}, reminder: {className} is tomorrow at {classTime}. See you there!",
     atRisk:   "Hi {firstName}, we've missed you! It's been a while since your last class. Come back and join us.",
     winback:  "Hi {firstName}, we haven't seen you in a while. We'd love to have you back — check the latest schedule and book your spot.",
-    welcome:  "Welcome to Lumnus, {firstName}! We're excited to have you. Book your first class and let's get started.",
     milestone: "Congrats, {firstName}! You've hit {visitCount} visits at Lumnus Studio. We love having you here.",
+    welcome:  "Welcome to Tether, {firstName}! We're excited to have you. Book your first class and let's get started.",
   },
 };

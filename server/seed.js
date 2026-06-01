@@ -4,6 +4,11 @@ import { connectDB } from "./config/db.js";
 import Booking from "./models/Booking.js";
 import Class from "./models/Class.js";
 import Member from "./models/Member.js";
+import Message from "./models/Message.js";
+import {
+  buildBookings,
+  generateOperationalSeed,
+} from "./data/operationalSeed.js";
 import { runRetentionScoring } from "./services/scoringJob.js";
 import config from "./config/businessConfig.js";
 
@@ -59,13 +64,17 @@ const memberBookingData = [
   { name: "Diego Vargas",   email: "diego.vargas@email.com",   phone: "+16195550112", membershipType: "unlimited", source: "google",    joinDaysAgo: 730, bookingOffsets: [40, 80, 120, 165, 200] },
   { name: "Yuki Tanaka",    email: "yuki.tanaka@email.com",    phone: "+16195550113", membershipType: "premium",   source: "referral",  joinDaysAgo: 243, bookingOffsets: [28, 60] },
 ];
+  process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/tether";
 
 async function seed() {
   await connectDB(MONGODB_URI);
 
+  const { memberProfiles, memberDocs, classData } = generateOperationalSeed(150);
+
   await Booking.deleteMany({});
   await Class.deleteMany({});
   await Member.deleteMany({});
+  await Message.deleteMany({});
   console.log("Cleared existing data");
 
   const classes = await Class.insertMany(classData);
@@ -80,26 +89,18 @@ async function seed() {
   const members = await Member.insertMany(memberDocs);
   console.log(`Inserted ${members.length} members`);
 
-  // Build bookings — each member cycles through classes starting at a unique offset
-  const bookings = [];
-  memberBookingData.forEach(({ bookingOffsets }, memberIdx) => {
-    const member = members[memberIdx];
-    bookingOffsets.forEach((offset, bookingIdx) => {
-      bookings.push({
-        memberId: member._id,
-        classId:  classes[(memberIdx + bookingIdx) % classes.length]._id,
-        bookedAt: daysAgo(offset),
-        attended: Math.random() > 0.2,
-      });
-    });
-  });
+  const bookingSpecs = buildBookings(memberProfiles, classes);
+  const bookings = bookingSpecs.map((b) => ({
+    memberId: members[b.memberIdx]._id,
+    classId: classes[b.classIdx]._id,
+    bookedAt: b.bookedAt,
+    attended: b.attended,
+  }));
   await Booking.insertMany(bookings);
   console.log(`Inserted ${bookings.length} bookings`);
 
-  // Persist computed retention status to DB
   await runRetentionScoring();
 
-  // Summary
   const scored = await Member.find({}, { status: 1 });
   const counts = { new: 0, regular: 0, "at-risk": 0, lapsed: 0 };
   for (const m of scored) counts[m.status] = (counts[m.status] || 0) + 1;
