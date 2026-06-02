@@ -36,8 +36,7 @@ export function AppShell() {
 
   const STUDIO = studio ?? {
     name: "Tether",
-    city: "Encinitas, CA",
-    owner: "Maya Calderón",
+    owner: "Studio Owner",
   };
 
   const today = formatStudioDate(new Date(), {
@@ -89,7 +88,6 @@ export function AppShell() {
           <div className="rounded-xl border border-sidebar-border bg-card p-3">
             <div className="text-xs text-muted-foreground">Owner</div>
             <div className="text-sm font-medium">{STUDIO.owner}</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{STUDIO.city}</div>
             {user?.email && (
               <div className="text-xs text-muted-foreground mt-2 truncate" title={user.email}>
                 {user.email}

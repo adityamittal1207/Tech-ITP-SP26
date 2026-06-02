@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getClientUrl } from "../config/clientUrl.js";
 
 function secret() {
   return (
@@ -69,6 +70,5 @@ export function verifyCancelToken(token) {
 
 export function buildCancelUrl(bookingId, ownerUid, bookedAt) {
   const token = createCancelToken(bookingId, ownerUid, bookedAt);
-  const base = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
-  return `${base}/cancel/${token}`;
+  return `${getClientUrl()}/cancel/${token}`;
 }

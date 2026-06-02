@@ -17,7 +17,7 @@ export function buildDefaultSettings(ownerUid) {
     key: "main",
     studioName: businessConfig.studioName,
     studioOwner: businessConfig.studioOwner,
-    city: "Encinitas, CA",
+    city: "",
     replyToEmail: "hi@tether.studio",
     bookingSlug: "tether-encinitas",
     publicBookingEnabled: true,

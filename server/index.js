@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import cron from "node-cron";
 import { connectDB } from "./config/db.js";
+import { describeClientUrl } from "./config/clientUrl.js";
 import { isFirebaseAuthEnabled } from "./config/firebaseAdmin.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -66,6 +67,7 @@ async function start() {
     await connectDB(MONGODB_URI);
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`Client URL (cancel/booking links): ${describeClientUrl()}`);
       console.log(
         isFirebaseAuthEnabled
           ? "API auth: Firebase ID tokens required"

@@ -1,6 +1,6 @@
 export default {
   studioName: "Tether",
-  studioOwner: "Aditya Mittal",
+  studioOwner: "Studio Owner",
   primaryColor: "#C8F135",
   classCategories: ["yoga", "pilates", "hiit", "spin", "strength"],
   membershipTiers: ["basic", "premium", "unlimited"],

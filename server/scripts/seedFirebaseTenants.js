@@ -13,6 +13,7 @@ import { seedTenant } from "../services/tenantSeedService.js";
 const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/tether";
 
 const DEFAULT_UIDS = [
+  "CJKpE4LxDbS24OVIUIgD5SYpnyc2",
   "HdxBW17E6dacJlbNmPdd45SmbOu2",
   "BuwHZGfenUMFrR8LnJZ6kUiIbyk1",
 ];
@@ -26,12 +27,22 @@ async function main() {
   for (const ownerUid of uids) {
     console.log(`── ${ownerUid} ──`);
     const summary = await seedTenant(ownerUid);
+    if (summary.studioName) {
+      console.log(`  Studio: ${summary.studioName} (${summary.bookingSlug ?? "no slug"})`);
+    }
     console.log(
       `  ${summary.classes} classes, ${summary.members} members, ${summary.bookings} bookings, ${summary.messages} messages`,
     );
     console.log(
-      `  Retention: new=${summary.retention.new} regular=${summary.retention.regular} at-risk=${summary.retention["at-risk"]} lapsed=${summary.retention.lapsed}\n`,
+      `  Retention: new=${summary.retention.new} regular=${summary.retention.regular} at-risk=${summary.retention["at-risk"]} lapsed=${summary.retention.lapsed}`,
     );
+    if (summary.waitlistSmsDemo) {
+      const w = summary.waitlistSmsDemo;
+      console.log(
+        `  SMS waitlist demo: "${w.className}" today ${w.time} — ${w.booked}/${w.capacity} booked, 0 waitlist (use ${w.ownerMemberName} for your phone)`,
+      );
+    }
+    console.log("");
   }
 
   await mongoose.disconnect();

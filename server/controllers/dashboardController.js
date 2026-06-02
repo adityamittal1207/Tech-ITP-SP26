@@ -190,7 +190,7 @@ export async function getHomeDashboard(req, res, next) {
     res.json({
       studio: {
         name: businessConfig.studioName,
-        city: "Encinitas, CA",
+        city: "",
         owner: "Studio Owner",
       },
       kpis,

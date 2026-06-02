@@ -384,7 +384,7 @@ function SettingsPage() {
         <div className="space-y-3">
           <Field icon={Phone} label="SMS sender" value={studio.smsSender} badge={studio.smsSender !== "Not configured" ? "Verified" : undefined} />
           <Field icon={Mail} label="Reply-to email" value={studio.replyToEmail} badge="Verified" />
-          <Field icon={Mail} label="Studio" value={`${studio.name} · ${studio.city}`} />
+          <Field icon={Mail} label="Studio" value={studio.name} />
         </div>
       </div>
 

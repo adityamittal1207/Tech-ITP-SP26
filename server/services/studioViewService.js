@@ -1,4 +1,5 @@
 import businessConfig from "../config/businessConfig.js";
+import { getClientUrl } from "../config/clientUrl.js";
 import Booking from "../models/Booking.js";
 import { getEffectiveConfig } from "./configService.js";
 import Class from "../models/Class.js";
@@ -759,7 +760,7 @@ export async function getSettingsPage(ownerUid) {
       slug: config.bookingSlug || "",
       publicBookingEnabled: config.publicBookingEnabled,
       bookingUrl: config.bookingSlug
-        ? `${process.env.CLIENT_URL || "http://localhost:5173"}/book/${config.bookingSlug}`
+        ? `${getClientUrl()}/book/${config.bookingSlug}`
         : null,
     },
     lastImport: lastImport

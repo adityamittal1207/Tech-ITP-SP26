@@ -10,7 +10,7 @@ const range = (n) => Array.from({ length: n }, (_, i) => i);
 
 export const STUDIO = {
   name: "Tidewater Yoga + Surf",
-  city: "Encinitas, CA",
+  city: "",
   owner: "Maya Calderón",
 };
 

@@ -4,7 +4,7 @@ export function getConfig(_req, res) {
   res.json({
     studio: {
       name: businessConfig.studioName,
-      city: "Encinitas, CA",
+      city: "",
       owner: "Studio Owner",
       smsSender: process.env.TWILIO_PHONE_NUMBER || "Not configured",
       replyToEmail: "hi@tether.studio",

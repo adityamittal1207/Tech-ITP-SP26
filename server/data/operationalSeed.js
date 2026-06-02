@@ -140,8 +140,8 @@ function buildHistory(lastDaysAgo, count) {
 
 /** Fixed owner profile — always seeded first for SMS testing */
 export const OWNER_PROFILE = {
-  name: "Aditya Mittal",
-  email: "aditya.mittal@tether.studio",
+  name: "Studio Owner",
+  email: "owner@tether.studio",
   phone: "+17187758267",
   membershipType: "unlimited",
   joinDaysAgo: 365,

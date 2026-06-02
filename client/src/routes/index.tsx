@@ -12,7 +12,7 @@ import { PageError, PageLoader } from "@/components/PageState";
 import { MetricTerm } from "@/components/MetricTerm";
 import { KPI_DELTA_METRIC } from "@/lib/metric-explanations";
 import { useHomePage } from "@/hooks/use-studio-data";
-import { cn } from "@/lib/utils";
+import { cn, ownerGreetingName } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -62,7 +62,7 @@ function Home() {
   return (
     <div className="space-y-8">
       <PageHeader
-        title={`Good morning, ${studio.owner.split(" ")[0]} ☕`}
+        title={`Good morning, ${ownerGreetingName(studio.owner)} ☕`}
         subtitle={`Here's what's happening at ${studio.name} today.`}
       />
 
